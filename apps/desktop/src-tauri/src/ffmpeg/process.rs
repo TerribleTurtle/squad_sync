@@ -39,11 +39,30 @@ pub fn spawn_ffmpeg(app: &AppHandle) -> Result<CommandChild, String> {
     
     println!("Selected encoder: {:?}", encoder);
 
+    // Get primary monitor info
+    let monitor = if let Some(window) = app.get_webview_window("main") {
+        window.primary_monitor().ok().flatten()
+    } else {
+        None
+    };
+
+    let (width, height, x, y) = if let Some(m) = monitor {
+        let size = m.size();
+        let pos = m.position();
+        (size.width, size.height, pos.x, pos.y)
+    } else {
+        (1920, 1080, 0, 0) // Fallback
+    };
+    
+    println!("Primary monitor: {}x{} at {},{}", width, height, x, y);
+
     let builder = FfmpegCommandBuilder::new(output_path_str)
         .with_video_codec(encoder.as_ffmpeg_codec().to_string())
         .with_bitrate(config.recording.bitrate.clone())
         .with_framerate(config.recording.framerate)
-        .with_resolution(config.recording.resolution.clone());
+        .with_resolution(config.recording.resolution.clone())
+        .with_video_size(format!("{}x{}", width, height))
+        .with_offset(x, y);
         
     let args = builder.build();
 

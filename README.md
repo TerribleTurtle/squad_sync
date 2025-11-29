@@ -9,6 +9,8 @@
 *   **Multi-POV Playback**: Watch the action unfold from every angle in a synchronized grid view.
 *   **Cloud Integration**: Clips are automatically uploaded to the cloud for instant sharing.
 *   **Resource Efficient**: Hardware-accelerated encoding (NVENC/AMF/QSV) minimizes impact on game performance.
+*   **Smart Capture**: Automatically targets your primary monitor at native resolution.
+*   **Configurable**: Customize resolution, bitrate, framerate, and encoder via `config.toml`.
 
 ## 🛠️ Tech Stack
 
@@ -49,7 +51,8 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
     pnpm install
     ```
 
-    pnpm dev --filter desktop
+    ```bash
+    pnpm dev
     ```
 
 ### Development Workflow

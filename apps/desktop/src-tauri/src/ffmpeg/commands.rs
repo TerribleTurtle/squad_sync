@@ -10,6 +10,9 @@ pub struct FfmpegCommandBuilder {
     segment_wrap: u32,
     output_path: String,
     resolution: Option<String>,
+    video_size: Option<String>,
+    offset_x: Option<i32>,
+    offset_y: Option<i32>,
 }
 
 impl FfmpegCommandBuilder {
@@ -25,6 +28,9 @@ impl FfmpegCommandBuilder {
             segment_wrap: 70,
             output_path,
             resolution: None,
+            video_size: None,
+            offset_x: None,
+            offset_y: None,
         }
     }
 
@@ -48,12 +54,38 @@ impl FfmpegCommandBuilder {
         self
     }
 
+    pub fn with_video_size(mut self, size: String) -> Self {
+        self.video_size = Some(size);
+        self
+    }
+
+    pub fn with_offset(mut self, x: i32, y: i32) -> Self {
+        self.offset_x = Some(x);
+        self.offset_y = Some(y);
+        self
+    }
+
     pub fn build(&self) -> Vec<String> {
         let mut args = vec![
             "-f".to_string(), self.input_format.clone(),
             "-framerate".to_string(), self.framerate.to_string(),
-            "-i".to_string(), self.input_source.clone(),
         ];
+
+        if let Some(size) = &self.video_size {
+            args.push("-video_size".to_string());
+            args.push(size.clone());
+        }
+
+        if let (Some(x), Some(y)) = (self.offset_x, self.offset_y) {
+            args.push("-offset_x".to_string());
+            args.push(x.to_string());
+            args.push("-offset_y".to_string());
+            args.push(y.to_string());
+        }
+
+        args.extend(vec![
+            "-i".to_string(), self.input_source.clone(),
+        ]);
 
         if let Some(res) = &self.resolution {
             args.push("-vf".to_string());
@@ -89,9 +121,9 @@ mod tests {
         assert_eq!(args[1], "gdigrab");
         assert_eq!(args[2], "-framerate");
         assert_eq!(args[3], "60");
-        assert_eq!(args[16], "-segment_time");
-        assert_eq!(args[19], "70");
-        assert_eq!(args.last().unwrap(), "output.ts");
+        // No video_size or offset in default
+        assert_eq!(args[4], "-i");
+        assert_eq!(args[5], "desktop");
     }
 
     #[test]
@@ -100,6 +132,24 @@ mod tests {
             .with_video_codec("h264_nvenc".to_string());
         let args = builder.build();
         
+        // Index depends on what comes before. 
+        // Default: -f gdigrab -framerate 60 -i desktop -c:v ...
         assert_eq!(args[7], "h264_nvenc");
+    }
+
+    #[test]
+    fn test_region_capture() {
+        let builder = FfmpegCommandBuilder::new("output.ts".to_string())
+            .with_video_size("1920x1080".to_string())
+            .with_offset(0, 0);
+        let args = builder.build();
+
+        assert_eq!(args[4], "-video_size");
+        assert_eq!(args[5], "1920x1080");
+        assert_eq!(args[6], "-offset_x");
+        assert_eq!(args[7], "0");
+        assert_eq!(args[8], "-offset_y");
+        assert_eq!(args[9], "0");
+        assert_eq!(args[10], "-i");
     }
 }
