@@ -28,6 +28,19 @@ The system follows a **Distributed Peer-to-Cloud** model coordinated by a lightw
 | **Signaling** | **PartyKit** | Low-latency WebSockets, stateful serverless for lobby management. |
 | **Storage** | **Cloudflare R2** | Zero egress fees; compatible with S3 SDKs. |
 
+| **Storage** | **Cloudflare R2** | Zero egress fees; compatible with S3 SDKs. |
+
+### **2.3 Tauri v2 Specifics**
+
+*   **Plugins:** Core features are now plugins. We will use:
+    *   `@tauri-apps/plugin-shell` (FFmpeg spawning)
+    *   `@tauri-apps/plugin-fs` (File management)
+    *   `@tauri-apps/plugin-http` (Uploads)
+    *   `@tauri-apps/plugin-dialog` (File pickers)
+*   **Permissions:** Managed via **Capabilities** in `src-tauri/capabilities/`.
+    *   `core:shell:allow-execute` for FFmpeg.
+    *   `core:fs:allow-read-write` for temp/buffer directories.
+
 ---
 
 ## **3. MVP Feature Scope**
@@ -89,7 +102,9 @@ squadsync/
 │   ├── desktop/                 # Tauri app
 │   │   ├── src/                 # React frontend
 │   │   ├── src-tauri/           # Rust backend
-│   │   └── package.json
+│   │   │   ├── capabilities/    # Tauri v2 Permissions
+│   │   │   ├── src/
+│   │   │   └── tauri.conf.json
 │   └── signaling/               # PartyKit server
 │       ├── src/
 │       │   └── server.ts
@@ -180,6 +195,8 @@ apps/desktop/
 │   └── main.tsx
 │
 ├── src-tauri/                   # Rust Backend
+│   ├── capabilities/            # Permission definitions
+│   │   └── default.json
 │   ├── src/
 │   │   ├── main.rs              # Entry point
 │   │   ├── commands/            # Tauri commands

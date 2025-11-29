@@ -34,6 +34,7 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
 *   **Rust**: Stable
 *   **pnpm**: `npm install -g pnpm`
 *   **FFmpeg**: Installed and available in PATH (for development).
+    *   **Note**: The desktop app also requires an `ffmpeg` binary in `apps/desktop/src-tauri/bin/` (or `externalBin` configured) for the release build.
 
 ### Installation
 
@@ -48,10 +49,13 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
     pnpm install
     ```
 
-3.  Run the desktop app (Development):
-    ```bash
     pnpm dev --filter desktop
     ```
+
+### Development Workflow
+
+*   **Local CI**: Run `pnpm run ci` to execute build, lint, and typecheck locally.
+*   **CI/CD**: GitHub Actions is configured for manual triggers only. Go to the "Actions" tab on GitHub to run the CI pipeline.
 
 ## 📖 Documentation
 

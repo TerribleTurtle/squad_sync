@@ -52,6 +52,29 @@ async function uploadClip(url: string, data: Blob): Promise<Result<string>> {
 ```
 
 ---
+ 
+ ## **1.3 Tauri v2 Plugins (Frontend)**
+ 
+ In Tauri v2, core APIs are moved to plugins.
+ 
+ ```typescript
+ // OLD (v1)
+ // import { invoke } from "@tauri-apps/api/tauri";
+ // import { appDataDir } from "@tauri-apps/api/path";
+ 
+ // NEW (v2)
+ import { invoke } from "@tauri-apps/api/core";
+ import { appDataDir } from "@tauri-apps/api/path"; // Now requires @tauri-apps/plugin-path
+ import { Command } from "@tauri-apps/plugin-shell";
+ 
+ async function startFfmpeg() {
+   // Requires `shell` plugin and permissions
+   const command = Command.sidecar("ffmpeg", ["-i", ...]);
+   const child = await command.spawn();
+ }
+ ```
+ 
+ ---
 
 ## **2. Rust Patterns (Backend)**
 
@@ -141,7 +164,28 @@ async fn create_clip(
 }
 ```
 
----
+```
+ 
+ ### **2.4 Capabilities & Permissions (Tauri v2)**
+ 
+ Permissions are defined in `src-tauri/capabilities/default.json`.
+ 
+ ```json
+ {
+   "identifier": "default",
+   "description": "Default permissions for the app",
+   "local": true,
+   "windows": ["main"],
+   "permissions": [
+     "core:default",
+     "core:shell:allow-execute",
+     "core:fs:allow-read-text-file",
+     "core:fs:allow-write-file"
+   ]
+ }
+ ```
+ 
+ ---
 
 ## **3. React Component Patterns**
 
@@ -201,4 +245,26 @@ export function VideoGrid({ clips, activeIndex, onActiveChange }: VideoGridProps
     </div>
   );
 }
+
+---
+
+## **4. CI/CD Workflow**
+
+### **4.1 Local CI**
+
+To save GitHub Actions minutes and iterate quickly, run the full CI suite locally before pushing. This command runs `build`, `lint`, and `typecheck` in parallel.
+
+```bash
+pnpm run ci
+```
+
+### **4.2 GitHub Actions**
+
+We use GitHub Actions for a final verification in the cloud. To conserve minutes, **automatic triggers (push/PR) are disabled**.
+
+**To run CI on GitHub:**
+1.  Go to the **Actions** tab in the repository.
+2.  Select the **CI** workflow.
+3.  Click **Run workflow**.
+4.  Select the branch (usually `main`) and click **Run workflow**.
 ```

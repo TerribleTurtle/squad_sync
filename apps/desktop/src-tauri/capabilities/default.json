@@ -1,0 +1,25 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for the app",
+  "local": true,
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "ffmpeg",
+          "cmd": "ffmpeg",
+          "args": true
+        }
+      ]
+    },
+    "fs:allow-read-text-file",
+    "fs:allow-write-file",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "http:default"
+  ]
+}
