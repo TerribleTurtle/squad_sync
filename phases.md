@@ -19,6 +19,7 @@
 - [x] Setup IDE (`.editorconfig`, `.vscode/`)
 - [x] Setup Basic CI (Lint, Build, Typecheck) - *Manual Trigger Only*
 
+
 ## **Phase 2: Core Video Tech (Proof of Concept)**
 **Goal:** Prove the "Silent Recorder" architecture works (FFmpeg + Rust + Disk).
 **Priority:** CRITICAL
@@ -26,8 +27,10 @@
 - [x] Implement Rust FFmpeg sidecar management
 - [x] Implement basic Ring Buffer (write to disk)
 - [x] Verify hardware acceleration detection (NVENC/AMF/QSV)
-- [ ] **Deliverable:** A running Tauri app that records the screen to a temp folder.
+- [x] **Deliverable:** A running Tauri app that records the screen to a temp folder.
 - [x] Implement Configuration Management (config.toml)
+- [x] **High Performance Capture** (ddagrab + Zero-Copy)
+- [x] **Manual Recording Mode** (MP4 Output)
 - [ ] Implement Buffer Cleanup Logic
 - [ ] Implement Basic Error Handling (Recording/FFmpeg)
 

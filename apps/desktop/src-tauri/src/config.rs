@@ -16,6 +16,8 @@ pub struct RecordingConfig {
     pub framerate: u32,
     pub bitrate: String,
     pub encoder: String,
+    pub mode: String, // "segment" or "manual"
+    pub capture_method: String, // "gdigrab" or "ddagrab"
 }
 
 impl Default for AppConfig {
@@ -27,6 +29,8 @@ impl Default for AppConfig {
                 framerate: 60,
                 bitrate: "6M".to_string(),
                 encoder: "auto".to_string(),
+                mode: "segment".to_string(),
+                capture_method: "gdigrab".to_string(),
             },
         }
     }

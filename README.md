@@ -1,19 +1,6 @@
 # SquadSync
 
 **SquadSync** is a distributed "Silent Recorder" for gaming squads. It captures high-quality gameplay locally and synchronizes clip generation across your entire squad, ensuring you never miss a moment from any perspective.
-
-## 🚀 Key Features
-
-*   **Silent Recording**: Zero-latency local recording using a rolling buffer (60s default).
-*   **Squad Synchronization**: One button press saves the last 60 seconds for *everyone* in the lobby.
-*   **Multi-POV Playback**: Watch the action unfold from every angle in a synchronized grid view.
-*   **Cloud Integration**: Clips are automatically uploaded to the cloud for instant sharing.
-*   **Resource Efficient**: Hardware-accelerated encoding (NVENC/AMF/QSV) minimizes impact on game performance.
-*   **Smart Capture**: Automatically targets your primary monitor at native resolution.
-*   **Configurable**: Customize resolution, bitrate, framerate, and encoder via `config.toml`.
-
-## 🛠️ Tech Stack
-
 *   **Desktop App**: [Tauri v2](https://v2.tauri.app/) (Rust + React)
 *   **Signaling**: [PartyKit](https://partykit.io/) (Serverless WebSockets)
 *   **Video Engine**: FFmpeg (Sidecar Process)
