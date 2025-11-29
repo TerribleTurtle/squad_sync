@@ -28,11 +28,16 @@
 - [x] Implement basic Ring Buffer (write to disk)
 - [x] Verify hardware acceleration detection (NVENC/AMF/QSV)
 - [x] **Deliverable:** A running Tauri app that records the screen to a temp folder.
-- [x] Implement Configuration Management (config.toml)
+- [x] Implement Configuration Management (config.toml) & Advanced Overrides
 - [x] **High Performance Capture** (ddagrab + Zero-Copy)
 - [x] **Manual Recording Mode** (MP4 Output)
 - [ ] Implement Buffer Cleanup Logic
 - [ ] Implement Basic Error Handling (Recording/FFmpeg)
+- [ ] **Circular Buffer Mode** (Configurable Timer)
+- [ ] **Game/System Audio Capture**
+- [ ] **Fix System Hang on Stop**
+- [x] **Screen Selector** (Multi-Monitor Support)
+- [x] **Dynamic Bitrate & Smart Resolution**
 
 ## **Phase 3: Shared Infrastructure**
 **Goal:** Set up the data types and contracts for the full app.

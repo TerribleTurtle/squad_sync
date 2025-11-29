@@ -83,6 +83,10 @@ pnpm --filter desktop tauri build
 *   **FFmpeg Sidecar**: The app uses a sidecar FFmpeg binary located in `apps/desktop/src-tauri/bin`. This is excluded from git to save space. Use `pnpm setup:ffmpeg` to fetch it.
 *   **Logs**: Runtime logs are written to `devices.log` in the app root during development.
 *   **Architecture**: The app records locally ("Silent Recorder") and syncs metadata via PartyKit. Video clips are uploaded to Cloudflare R2 only when requested.
+*   **Smart Recording**:
+    *   **Dynamic Bitrate**: Automatically calculates optimal bitrate based on resolution and framerate (0.1 bits/pixel).
+    *   **Smart Scaler**: Bypasses scaling filters when recording at native resolution for zero-overhead capture.
+    *   **Multi-Monitor**: Select any connected display for recording.
 
 ## 🤝 Contributing
 

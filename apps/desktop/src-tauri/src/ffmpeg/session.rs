@@ -18,6 +18,7 @@ impl RecordingSession {
         mut builder: FfmpegCommandBuilder,
         audio_source: Option<String>,
         audio_codec: Option<String>,
+        audio_bitrate: Option<String>,
     ) -> Result<Sender<RecordingMessage>, String> {
         let (tx, rx) = mpsc::channel::<RecordingMessage>();
         let tx_clone = tx.clone();
@@ -43,7 +44,7 @@ impl RecordingSession {
             // 2. Configure Audio in Builder
             if audio_enabled {
                 builder = builder
-                    .with_audio(audio_source, audio_codec)
+                    .with_audio(audio_source, audio_codec, audio_bitrate)
                     .with_audio_config(sample_rate, channels);
             }
 

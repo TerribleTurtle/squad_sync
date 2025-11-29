@@ -25,7 +25,8 @@ pub fn run() {
         commands::system::get_system_info,
         commands::config::get_config,
         commands::config::update_config,
-        commands::devices::get_audio_devices
+        commands::devices::get_audio_devices,
+        commands::monitors::get_monitors
     ])
     .setup(|app| {
       #[cfg(debug_assertions)]

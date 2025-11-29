@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri::Manager;
+use cpal::traits::{DeviceTrait, HostTrait};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
@@ -14,23 +15,45 @@ pub struct RecordingConfig {
     pub path: String,
     pub resolution: Option<String>,
     pub framerate: u32,
-    pub bitrate: String,
+    pub bitrate: Option<String>,
+    pub monitor_index: u32,
     pub encoder: String,
     pub audio_source: Option<String>,
     pub audio_codec: Option<String>,
+    
+    // Advanced Overrides (Hidden from default config)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_preset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_tune: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_bitrate: Option<String>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
+        // Auto-detect default microphone
+        let audio_source = cpal::default_host()
+            .default_input_device()
+            .map(|d| d.name().unwrap_or_default())
+            .filter(|n| !n.is_empty());
+
         Self {
             recording: RecordingConfig {
                 path: String::new(), // Empty string implies default temp dir
-                resolution: Some("1920x1080".to_string()),
+                resolution: Some("native".to_string()),
                 framerate: 60,
-                bitrate: "12M".to_string(),
+                bitrate: None,
+                monitor_index: 0,
                 encoder: "auto".to_string(),
-                audio_source: None,
+                audio_source,
                 audio_codec: None,
+                video_preset: None,
+                video_tune: None,
+                video_profile: None,
+                audio_bitrate: None,
             },
         }
     }
@@ -90,7 +113,7 @@ mod tests {
     fn test_default_config() {
         let config = AppConfig::default();
         assert_eq!(config.recording.framerate, 60);
-        assert_eq!(config.recording.bitrate, "12M");
+        assert_eq!(config.recording.bitrate, None);
         assert_eq!(config.recording.encoder, "auto");
     }
 

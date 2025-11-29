@@ -3,7 +3,9 @@ pub struct FfmpegCommandBuilder {
     framerate: u32,
     video_codec: String,
     bitrate: String,
-    preset: String,
+    preset: Option<String>,
+    tune: Option<String>,
+    profile: Option<String>,
     output_path: String,
     resolution: Option<String>,
     video_size: Option<String>,
@@ -12,6 +14,7 @@ pub struct FfmpegCommandBuilder {
     // Audio Config
     audio_source: Option<String>,
     audio_codec: Option<String>,
+    audio_bitrate: Option<String>,
     audio_sample_rate: u32,
     audio_channels: u16,
 }
@@ -22,13 +25,16 @@ impl FfmpegCommandBuilder {
             framerate: 60,
             video_codec: "libx264".to_string(),
             bitrate: "6M".to_string(),
-            preset: "ultrafast".to_string(),
+            preset: None,
+            tune: None,
+            profile: None,
             output_path,
             resolution: None,
             video_size: None,
             monitor_index: 0,
             audio_source: None,
             audio_codec: None,
+            audio_bitrate: None,
             audio_sample_rate: 48000,
             audio_channels: 2,
         }
@@ -59,8 +65,18 @@ impl FfmpegCommandBuilder {
         self
     }
 
-    pub fn with_preset(mut self, preset: String) -> Self {
+    pub fn with_preset(mut self, preset: Option<String>) -> Self {
         self.preset = preset;
+        self
+    }
+
+    pub fn with_tune(mut self, tune: Option<String>) -> Self {
+        self.tune = tune;
+        self
+    }
+
+    pub fn with_profile(mut self, profile: Option<String>) -> Self {
+        self.profile = profile;
         self
     }
 
@@ -69,9 +85,10 @@ impl FfmpegCommandBuilder {
         self
     }
 
-    pub fn with_audio(mut self, source: Option<String>, codec: Option<String>) -> Self {
+    pub fn with_audio(mut self, source: Option<String>, codec: Option<String>, bitrate: Option<String>) -> Self {
         self.audio_source = source;
         self.audio_codec = codec;
+        self.audio_bitrate = bitrate;
         self
     }
 
@@ -166,9 +183,9 @@ impl FfmpegCommandBuilder {
                 // We parse the bitrate string (e.g. "30M") to calculate these
                 "-maxrate".to_string(), format!("{}M", self.bitrate.replace("M", "").parse::<u32>().unwrap_or(8) * 3 / 2), // 1.5x target
                 "-bufsize".to_string(), format!("{}M", self.bitrate.replace("M", "").parse::<u32>().unwrap_or(8) * 2),     // 2.0x target
-                "-preset".to_string(), "p4".to_string(), // Upgraded to p4 (Medium) for better quality
-                "-tune".to_string(), "ull".to_string(),  // Re-enabled ull for speed
-                "-profile:v".to_string(), "high".to_string(),
+                "-preset".to_string(), self.preset.clone().unwrap_or("p4".to_string()),
+                "-tune".to_string(), self.tune.clone().unwrap_or("ull".to_string()),
+                "-profile:v".to_string(), self.profile.clone().unwrap_or("high".to_string()),
             ]);
         } else if self.video_codec.contains("amf") {
             // AMD AMF Specifics
@@ -176,24 +193,24 @@ impl FfmpegCommandBuilder {
                 "-rc".to_string(), "cbr".to_string(), // AMF often prefers CBR for stability
                 "-b:v".to_string(), self.bitrate.clone(),
                 "-usage".to_string(), "transcoding".to_string(), // Real-time optimization
-                "-quality".to_string(), "speed".to_string(),     // Prioritize speed
-                "-profile:v".to_string(), "high".to_string(),
+                "-quality".to_string(), self.preset.clone().unwrap_or("speed".to_string()),     // Prioritize speed
+                "-profile:v".to_string(), self.profile.clone().unwrap_or("high".to_string()),
             ]);
         } else if self.video_codec.contains("qsv") {
             // Intel QSV Specifics
             args.extend(vec![
                 "-rc".to_string(), "vbr".to_string(),
                 "-b:v".to_string(), self.bitrate.clone(),
-                "-preset".to_string(), "veryfast".to_string(),   // Speed priority
-                "-profile:v".to_string(), "high".to_string(),
+                "-preset".to_string(), self.preset.clone().unwrap_or("veryfast".to_string()),   // Speed priority
+                "-profile:v".to_string(), self.profile.clone().unwrap_or("high".to_string()),
             ]);
         } else {
             // Software (CPU) Fallback - libx264
             // CRITICAL: Must be ultrafast to have any chance of real-time 1080p+
             args.extend(vec![
                 "-b:v".to_string(), self.bitrate.clone(),
-                "-preset".to_string(), "ultrafast".to_string(),
-                "-tune".to_string(), "zerolatency".to_string(),
+                "-preset".to_string(), self.preset.clone().unwrap_or("ultrafast".to_string()),
+                "-tune".to_string(), self.tune.clone().unwrap_or("zerolatency".to_string()),
             ]);
         }
 
@@ -214,7 +231,7 @@ impl FfmpegCommandBuilder {
         if self.audio_source.is_some() {
             args.extend(vec![
                 "-c:a".to_string(), self.audio_codec.clone().unwrap_or_else(|| "aac".to_string()),
-                "-b:a".to_string(), "192k".to_string(),
+                "-b:a".to_string(), self.audio_bitrate.clone().unwrap_or("192k".to_string()),
             ]);
         }
 

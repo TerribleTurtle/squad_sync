@@ -2,9 +2,18 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AppConfig } from "../types/config";
 
+interface MonitorInfo {
+  id: number;
+  name: string;
+  width: number;
+  height: number;
+  is_primary: boolean;
+}
+
 export function Settings() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
+  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -14,9 +23,10 @@ export function Settings() {
 
   async function loadData() {
     try {
-      const [loadedConfig, devices] = await Promise.all([
+      const [loadedConfig, devices, monitorList] = await Promise.all([
         invoke<AppConfig>("get_config"),
         invoke<string[]>("get_audio_devices"),
+        invoke<MonitorInfo[]>("get_monitors"),
       ]);
       
       // Force update bitrate to new standards if it looks like an old config
@@ -42,6 +52,7 @@ export function Settings() {
 
       setConfig(loadedConfig);
       setAudioDevices(devices);
+      setMonitors(monitorList);
     } catch (e) {
       console.error("Failed to load settings:", e);
     } finally {
@@ -123,6 +134,22 @@ export function Settings() {
             {audioDevices.map((device) => (
               <option key={device} value={device}>
                 {device}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Monitor Selection */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Monitor</label>
+          <select
+            value={config.recording.monitor_index || 0}
+            onChange={(e) => updateRecordingConfig("monitor_index", parseInt(e.target.value))}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+          >
+            {monitors.map((monitor) => (
+              <option key={monitor.id} value={monitor.id}>
+                {monitor.name} ({monitor.width}x{monitor.height}) {monitor.is_primary ? "(Primary)" : ""}
               </option>
             ))}
           </select>

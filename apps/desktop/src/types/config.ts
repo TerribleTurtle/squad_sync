@@ -19,6 +19,7 @@ export interface AppConfig {
     resolution?: string;
     framerate: number;
     bitrate: string;
+    monitor_index: number;
     encoder: string;
     audio_source?: string;
     audio_codec?: string;
