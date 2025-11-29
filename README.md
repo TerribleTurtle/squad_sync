@@ -15,6 +15,14 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
 *   `packages/shared`: Shared TypeScript types, schemas, and constants.
 *   `packages/ffmpeg-commands`: FFmpeg command builders and utilities.
 
+## 🛠️ Tech Stack
+
+*   **Frontend**: React, TailwindCSS, Zustand
+*   **Backend (Desktop)**: Rust (Tauri v2)
+*   **Signaling**: PartyKit (Cloudflare Workers)
+*   **Video Processing**: FFmpeg (Sidecar)
+*   **Build System**: TurboRepo, pnpm
+
 ## 🚦 Getting Started
 
 ### Prerequisites
@@ -23,7 +31,8 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
 *   **Rust**: Stable
 *   **pnpm**: `npm install -g pnpm`
 *   **FFmpeg**: Installed and available in PATH (for development).
-    *   **Note**: The desktop app also requires an `ffmpeg` binary in `apps/desktop/src-tauri/bin/` (or `externalBin` configured) for the release build.
+*   **FFmpeg**: Installed and available in PATH (for development).
+    *   **Note**: The desktop app requires a specific FFmpeg binary. Run `pnpm setup:ffmpeg` in `apps/desktop` to download it.
 
 ### Installation
 
@@ -42,6 +51,22 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
     pnpm dev
     ```
 
+### Building for Production
+
+To build the desktop application:
+
+```bash
+# 1. Setup FFmpeg binary
+cd apps/desktop
+pnpm setup:ffmpeg
+cd ../..
+
+# 2. Build
+pnpm build
+# OR specifically for desktop
+pnpm --filter desktop tauri build
+```
+
 ### Development Workflow
 
 *   **Local CI**: Run `pnpm run ci` to execute build, lint, and typecheck locally.
@@ -52,6 +77,12 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
 *   [Technical Specification](technical_specification.md): Detailed system architecture and requirements.
 *   [Developer Guide](developer_guide.md): Code patterns, standards, and examples.
 *   [Phases & Roadmap](phases.md): High-level project roadmap.
+
+### Developer Notes
+
+*   **FFmpeg Sidecar**: The app uses a sidecar FFmpeg binary located in `apps/desktop/src-tauri/bin`. This is excluded from git to save space. Use `pnpm setup:ffmpeg` to fetch it.
+*   **Logs**: Runtime logs are written to `devices.log` in the app root during development.
+*   **Architecture**: The app records locally ("Silent Recorder") and syncs metadata via PartyKit. Video clips are uploaded to Cloudflare R2 only when requested.
 
 ## 🤝 Contributing
 

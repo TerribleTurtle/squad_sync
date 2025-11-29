@@ -35,3 +35,20 @@ pnpm-debug.log*
 
 # Temp
 tmp/
+
+# Media
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+
+# Logs
+devices.log
+*.log
+
+# Binaries
+apps/desktop/src-tauri/bin/
+!apps/desktop/src-tauri/bin/.gitkeep
+apps/desktop/src-tauri/ffmpeg.exe
+apps/desktop/src-tauri/ffmpeg-*.exe

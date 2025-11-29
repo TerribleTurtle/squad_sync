@@ -1,10 +1,11 @@
 use tauri::Manager;
 
 pub mod ffmpeg;
-
 pub mod commands;
 pub mod state;
 pub mod config;
+pub mod audio;
+pub mod error;
 
 use state::RecordingState;
 
@@ -23,7 +24,8 @@ pub fn run() {
         commands::upload::upload_clip,
         commands::system::get_system_info,
         commands::config::get_config,
-        commands::config::update_config
+        commands::config::update_config,
+        commands::devices::get_audio_devices
     ])
     .setup(|app| {
       #[cfg(debug_assertions)]

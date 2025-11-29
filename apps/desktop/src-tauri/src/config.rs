@@ -16,8 +16,8 @@ pub struct RecordingConfig {
     pub framerate: u32,
     pub bitrate: String,
     pub encoder: String,
-    pub mode: String, // "segment" or "manual"
-    pub capture_method: String, // "gdigrab" or "ddagrab"
+    pub audio_source: Option<String>,
+    pub audio_codec: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -25,16 +25,17 @@ impl Default for AppConfig {
         Self {
             recording: RecordingConfig {
                 path: String::new(), // Empty string implies default temp dir
-                resolution: None,    // None implies native
+                resolution: Some("1920x1080".to_string()),
                 framerate: 60,
-                bitrate: "6M".to_string(),
+                bitrate: "12M".to_string(),
                 encoder: "auto".to_string(),
-                mode: "segment".to_string(),
-                capture_method: "gdigrab".to_string(),
+                audio_source: None,
+                audio_codec: None,
             },
         }
     }
 }
+
 
 impl AppConfig {
     pub fn load(app: &AppHandle) -> Self {
@@ -89,7 +90,7 @@ mod tests {
     fn test_default_config() {
         let config = AppConfig::default();
         assert_eq!(config.recording.framerate, 60);
-        assert_eq!(config.recording.bitrate, "6M");
+        assert_eq!(config.recording.bitrate, "12M");
         assert_eq!(config.recording.encoder, "auto");
     }
 

@@ -1,40 +1,36 @@
 #[derive(Debug, Clone)]
 pub struct FfmpegCommandBuilder {
-    input_format: String,
     framerate: u32,
-    input_source: String,
     video_codec: String,
     bitrate: String,
     preset: String,
-    segment_time: u32,
-    segment_wrap: u32,
     output_path: String,
     resolution: Option<String>,
     video_size: Option<String>,
-    offset_x: Option<i32>,
-    offset_y: Option<i32>,
-    mode: String,
-    capture_method: String,
+    monitor_index: u32,
+    
+    // Audio Config
+    audio_source: Option<String>,
+    audio_codec: Option<String>,
+    audio_sample_rate: u32,
+    audio_channels: u16,
 }
 
 impl FfmpegCommandBuilder {
     pub fn new(output_path: String) -> Self {
         Self {
-            input_format: "gdigrab".to_string(),
             framerate: 60,
-            input_source: "desktop".to_string(),
-            video_codec: "libx264".to_string(), // Default to software for compatibility
+            video_codec: "libx264".to_string(),
             bitrate: "6M".to_string(),
             preset: "ultrafast".to_string(),
-            segment_time: 1,
-            segment_wrap: 70,
             output_path,
             resolution: None,
             video_size: None,
-            offset_x: None,
-            offset_y: None,
-            mode: "segment".to_string(),
-            capture_method: "gdigrab".to_string(),
+            monitor_index: 0,
+            audio_source: None,
+            audio_codec: None,
+            audio_sample_rate: 48000,
+            audio_channels: 2,
         }
     }
 
@@ -63,118 +59,176 @@ impl FfmpegCommandBuilder {
         self
     }
 
-    pub fn with_offset(mut self, x: i32, y: i32) -> Self {
-        self.offset_x = Some(x);
-        self.offset_y = Some(y);
-        self
-    }
-
     pub fn with_preset(mut self, preset: String) -> Self {
         self.preset = preset;
         self
     }
 
-    pub fn with_mode(mut self, mode: String) -> Self {
-        self.mode = mode;
+    pub fn with_monitor_index(mut self, index: u32) -> Self {
+        self.monitor_index = index;
         self
     }
 
-    pub fn with_capture_method(mut self, method: String) -> Self {
-        self.capture_method = method;
+    pub fn with_audio(mut self, source: Option<String>, codec: Option<String>) -> Self {
+        self.audio_source = source;
+        self.audio_codec = codec;
+        self
+    }
+
+    pub fn with_audio_config(mut self, sample_rate: u32, channels: u16) -> Self {
+        self.audio_sample_rate = sample_rate;
+        self.audio_channels = channels;
         self
     }
 
     pub fn build(&self) -> Vec<String> {
         let mut args = Vec::new();
 
-        if self.capture_method == "ddagrab" {
-            args.push("-f".to_string());
-            args.push("lavfi".to_string());
-            
-            // Construct ddagrab filter string
-            // e.g. ddagrab=framerate=120:offset_x=0:offset_y=0:video_size=1920x1080,scale_d3d11=format=nv12
-            // Optimization: Capture at 2x target framerate to reduce jitter/dups.
-            // We then decimate to target framerate with -r output option.
-            let capture_rate = self.framerate * 2;
-            let mut filter_opts = format!("ddagrab=framerate={}", capture_rate);
-            
-            if let Some(size) = &self.video_size {
-                filter_opts.push_str(&format!(":video_size={}", size));
-            }
-            
-            if let (Some(x), Some(y)) = (self.offset_x, self.offset_y) {
-                filter_opts.push_str(&format!(":offset_x={}:offset_y={}", x, y));
-            }
-
-            // Optimization: Keep everything on GPU. 
-            // ddagrab (D3D11) -> framestep=2 (Drop every 2nd frame) -> scale_d3d11 (NV12) -> h264_nvenc
-            // framestep=2 converts 120fps -> 60fps instantly without averaging.
-            filter_opts.push_str(",framestep=2,scale_d3d11=format=nv12");
-
-            args.push("-i".to_string());
-            args.push(filter_opts);
-
-        } else {
-            // Default gdigrab
-            args.push("-f".to_string());
-            args.push("gdigrab".to_string());
-            args.push("-framerate".to_string());
-            args.push(self.framerate.to_string());
-            
-            if let Some(size) = &self.video_size {
-                args.push("-video_size".to_string());
-                args.push(size.clone());
-            }
-    
-            if let (Some(x), Some(y)) = (self.offset_x, self.offset_y) {
-                args.push("-offset_x".to_string());
-                args.push(x.to_string());
-                args.push("-offset_y".to_string());
-                args.push(y.to_string());
-            }
-    
-            args.push("-i".to_string());
-            args.push(self.input_source.clone());
+        // --- INPUT: DDAGRAB ---
+        args.push("-f".to_string());
+        args.push("lavfi".to_string());
+        args.push("-thread_queue_size".to_string());
+        args.push("2048".to_string());
+        
+        let mut filter_opts = format!("ddagrab=output_idx={}:framerate={}", self.monitor_index, self.framerate);
+        if let Some(size) = &self.video_size {
+            filter_opts.push_str(&format!(":video_size={}", size));
         }
+        args.push("-i".to_string());
+        args.push(filter_opts);
 
-        if let Some(res) = &self.resolution {
-            args.push("-vf".to_string());
-            args.push(format!("scale={}", res));
-        }
-
-        args.extend(vec![
-            "-c:v".to_string(), self.video_codec.clone(),
-            "-b:v".to_string(), self.bitrate.clone(),
-        ]);
-
-        // Use d3d11 for ddagrab (full GPU pipeline), yuv420p for gdigrab (compatibility)
-        if self.capture_method == "ddagrab" {
-            args.extend(vec!["-pix_fmt".to_string(), "d3d11".to_string()]);
-        } else {
-            args.extend(vec!["-pix_fmt".to_string(), "yuv420p".to_string()]);
-        }
-
-        args.extend(vec![
-            "-preset".to_string(), self.preset.clone(),
-            "-r".to_string(), self.framerate.to_string(), // Enforce CFR output
-        ]);
-
-        if self.mode == "manual" {
+        // --- INPUT: AUDIO (Pipe) ---
+        if let Some(_audio_src) = &self.audio_source {
             args.extend(vec![
-                "-f".to_string(), "mp4".to_string(),
-                "-movflags".to_string(), "+faststart".to_string(),
-                self.output_path.clone(),
-            ]);
-        } else {
-            args.extend(vec![
-                "-f".to_string(), "segment".to_string(),
-                "-segment_time".to_string(), self.segment_time.to_string(),
-                "-segment_wrap".to_string(), self.segment_wrap.to_string(),
-                "-reset_timestamps".to_string(), "1".to_string(),
-                self.output_path.clone(),
+                "-f".to_string(), "f32le".to_string(),
+                "-ar".to_string(), self.audio_sample_rate.to_string(),
+                "-ac".to_string(), self.audio_channels.to_string(),
+                "-thread_queue_size".to_string(), "16384".to_string(),
+                "-use_wallclock_as_timestamps".to_string(), "1".to_string(),
+                "-i".to_string(), "pipe:0".to_string(),
             ]);
         }
 
+        // --- FILTER CHAIN ---
+        let mut video_filters = String::new();
+        
+        // Resolution Logic:
+        // - None or "native" -> Native Resolution (No scaling, just format conversion)
+        // - "WxH" -> Scale to WxH
+        let use_native_res = match &self.resolution {
+            Some(r) => r.to_lowercase() == "native",
+            None => true,
+        };
+
+        if !use_native_res {
+            if let Some(res) = &self.resolution {
+                let parts: Vec<&str> = res.split('x').collect();
+                if parts.len() == 2 {
+                    video_filters.push_str(&format!("scale_d3d11={}:{}:format=nv12", parts[0], parts[1]));
+                } else {
+                    video_filters.push_str("scale_d3d11=format=nv12");
+                }
+            } else {
+                video_filters.push_str("scale_d3d11=format=nv12");
+            }
+        } else {
+            // Native: Just format conversion
+            video_filters.push_str("scale_d3d11=format=nv12");
+        }
+
+        if self.audio_source.is_some() {
+            let video_chain = if !video_filters.is_empty() {
+                format!("[0:v]setpts=PTS-STARTPTS,{}[vout]", video_filters)
+            } else {
+                "[0:v]setpts=PTS-STARTPTS[vout]".to_string()
+            };
+            let audio_chain = "[1:a]aresample=async=1,asetpts=PTS-STARTPTS[aout]";
+            args.extend(vec![
+                "-filter_complex".to_string(), format!("{};{}", audio_chain, video_chain),
+                "-map".to_string(), "[vout]".to_string(),
+                "-map".to_string(), "[aout]".to_string(),
+            ]);
+        } else {
+            if !video_filters.is_empty() {
+                args.push("-vf".to_string());
+                args.push(video_filters);
+            }
+            args.extend(vec!["-map".to_string(), "0:v".to_string()]);
+        }
+
+        // --- ENCODING ---
+        args.extend(vec!["-c:v".to_string(), self.video_codec.clone()]);
+        if self.video_codec.contains("nvenc") {
+            args.extend(vec![
+                "-rc".to_string(), "vbr".to_string(),
+                "-b:v".to_string(), self.bitrate.clone(),   // Use configured bitrate
+                // Dynamic Maxrate/Bufsize based on target bitrate
+                // We parse the bitrate string (e.g. "30M") to calculate these
+                "-maxrate".to_string(), format!("{}M", self.bitrate.replace("M", "").parse::<u32>().unwrap_or(8) * 3 / 2), // 1.5x target
+                "-bufsize".to_string(), format!("{}M", self.bitrate.replace("M", "").parse::<u32>().unwrap_or(8) * 2),     // 2.0x target
+                "-preset".to_string(), "p4".to_string(), // Upgraded to p4 (Medium) for better quality
+                "-tune".to_string(), "ull".to_string(),  // Re-enabled ull for speed
+                "-profile:v".to_string(), "high".to_string(),
+            ]);
+        } else if self.video_codec.contains("amf") {
+            // AMD AMF Specifics
+            args.extend(vec![
+                "-rc".to_string(), "cbr".to_string(), // AMF often prefers CBR for stability
+                "-b:v".to_string(), self.bitrate.clone(),
+                "-usage".to_string(), "transcoding".to_string(), // Real-time optimization
+                "-quality".to_string(), "speed".to_string(),     // Prioritize speed
+                "-profile:v".to_string(), "high".to_string(),
+            ]);
+        } else if self.video_codec.contains("qsv") {
+            // Intel QSV Specifics
+            args.extend(vec![
+                "-rc".to_string(), "vbr".to_string(),
+                "-b:v".to_string(), self.bitrate.clone(),
+                "-preset".to_string(), "veryfast".to_string(),   // Speed priority
+                "-profile:v".to_string(), "high".to_string(),
+            ]);
+        } else {
+            // Software (CPU) Fallback - libx264
+            // CRITICAL: Must be ultrafast to have any chance of real-time 1080p+
+            args.extend(vec![
+                "-b:v".to_string(), self.bitrate.clone(),
+                "-preset".to_string(), "ultrafast".to_string(),
+                "-tune".to_string(), "zerolatency".to_string(),
+            ]);
+        }
+
+        // --- FRAMERATE ---
+        args.extend(vec![
+            "-fps_mode".to_string(), "cfr".to_string(),
+            "-r".to_string(), "60".to_string(),
+        ]);
+
+        // --- GOP / KEYFRAMES ---
+        let gop = self.framerate * 2;
+        args.extend(vec![
+            "-g".to_string(), gop.to_string(),
+            "-bf".to_string(), "0".to_string(), // Disabled B-frames for speed
+        ]);
+
+        // --- AUDIO ENCODING ---
+        if self.audio_source.is_some() {
+            args.extend(vec![
+                "-c:a".to_string(), self.audio_codec.clone().unwrap_or_else(|| "aac".to_string()),
+                "-b:a".to_string(), "192k".to_string(),
+            ]);
+        }
+
+        // --- OUTPUT ---
+        args.extend(vec![
+            "-movflags".to_string(), "+frag_keyframe+empty_moov+default_base_moof".to_string(), // Safer MP4
+            "-max_muxing_queue_size".to_string(), "9999".to_string(),
+            "-stats".to_string(),
+            "-shortest".to_string(),
+            "-f".to_string(), "mp4".to_string(),
+            self.output_path.clone(),
+        ]);
+
+        // println!("Final FFmpeg args: {:?}", args);
         args
     }
 }
@@ -184,94 +238,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_builder() {
-        let builder = FfmpegCommandBuilder::new("output.ts".to_string());
+    fn test_builder_defaults() {
+        let builder = FfmpegCommandBuilder::new("output.mp4".to_string());
         let args = builder.build();
         
-        assert_eq!(args[0], "-f");
-        assert_eq!(args[1], "gdigrab");
-        assert_eq!(args[2], "-framerate");
-        assert_eq!(args[3], "60");
-        // No video_size or offset in default
-        assert_eq!(args[4], "-i");
-        assert_eq!(args[5], "desktop");
+        // Basic checks
+        assert!(args.contains(&"-f".to_string()));
+        assert!(args.contains(&"lavfi".to_string()));
+        assert!(args.contains(&"output.mp4".to_string()));
+        assert!(args.contains(&"libx264".to_string())); // Default codec
     }
 
     #[test]
-    fn test_custom_codec() {
-        let builder = FfmpegCommandBuilder::new("output.ts".to_string())
+    fn test_builder_nvenc() {
+        let builder = FfmpegCommandBuilder::new("output.mp4".to_string())
             .with_video_codec("h264_nvenc".to_string());
         let args = builder.build();
         
-        // Index depends on what comes before. 
-        // Default: -f gdigrab -framerate 60 -i desktop -c:v ...
-        assert_eq!(args[7], "h264_nvenc");
+        assert!(args.contains(&"h264_nvenc".to_string()));
+        assert!(args.contains(&"-tune".to_string()));
+        assert!(args.contains(&"ull".to_string())); // NVENC specific
     }
 
     #[test]
-    fn test_region_capture() {
-        let builder = FfmpegCommandBuilder::new("output.ts".to_string())
-            .with_video_size("1920x1080".to_string())
-            .with_offset(0, 0);
-        let args = builder.build();
-
-        assert_eq!(args[4], "-video_size");
-        assert_eq!(args[5], "1920x1080");
-        assert_eq!(args[6], "-offset_x");
-        assert_eq!(args[7], "0");
-        assert_eq!(args[8], "-offset_y");
-        assert_eq!(args[9], "0");
-        assert_eq!(args[10], "-i");
-    }
-
-    #[test]
-    fn test_manual_mode() {
+    fn test_builder_audio() {
         let builder = FfmpegCommandBuilder::new("output.mp4".to_string())
-            .with_mode("manual".to_string());
+            .with_audio(Some("Mic".to_string()), Some("aac".to_string()));
         let args = builder.build();
-
-        // Should contain -f mp4 and -movflags +faststart
-        assert!(args.contains(&"-f".to_string()));
-        assert!(args.contains(&"mp4".to_string()));
-        assert!(args.contains(&"-movflags".to_string()));
-        assert!(args.contains(&"+faststart".to_string()));
         
-        // Should NOT contain segment args
-        assert!(!args.contains(&"segment".to_string()));
-        assert!(!args.contains(&"-segment_time".to_string()));
-    }
-
-    #[test]
-    fn test_ddagrab_mode() {
-        let builder = FfmpegCommandBuilder::new("output.mp4".to_string())
-            .with_capture_method("ddagrab".to_string())
-            .with_video_codec("h264_nvenc".to_string())
-            .with_framerate(60)
-            .with_video_size("1920x1080".to_string())
-            .with_offset(0, 0);
-        let args = builder.build();
-
-        // Should use lavfi
-        assert_eq!(args[0], "-f");
-        assert_eq!(args[1], "lavfi");
-        assert_eq!(args[2], "-i");
-        
-        // Check filter string
-        // ddagrab=framerate=120:video_size=1920x1080:offset_x=0:offset_y=0,scale_d3d11=format=nv12
-        let filter = &args[3];
-        assert!(filter.starts_with("ddagrab="));
-        assert!(filter.contains("framerate=120")); // 2x 60
-        assert!(filter.contains("video_size=1920x1080"));
-        assert!(filter.contains("offset_x=0"));
-        assert!(filter.contains("offset_y=0"));
-        assert!(filter.contains(",framestep=2,scale_d3d11=format=nv12"));
-        assert!(!filter.contains("hwdownload")); // Should NOT download to CPU
-        
-        // Check pix_fmt
-        assert!(args.contains(&"-pix_fmt".to_string()));
-        assert!(args.contains(&"d3d11".to_string()));
-
-        // Check CFR enforcement
-        assert!(args.contains(&"-r".to_string()));
+        assert!(args.contains(&"pipe:0".to_string()));
+        assert!(args.contains(&"aac".to_string()));
+        // Check for filter complex
+        let has_filter = args.iter().any(|a| a.contains("aresample"));
+        assert!(has_filter);
     }
 }
