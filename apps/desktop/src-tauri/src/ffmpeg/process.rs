@@ -1,21 +1,50 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandEvent, CommandChild};
 use crate::ffmpeg::commands::FfmpegCommandBuilder;
+use crate::ffmpeg::encoder::{self, VideoEncoder};
+use crate::state::RecordingState;
 
 pub fn spawn_ffmpeg(app: &AppHandle) -> Result<CommandChild, String> {
     let app_cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
-    let buffer_dir = app_cache.join("buffer");
-    
-    // Ensure buffer directory exists
-    if !buffer_dir.exists() {
-        std::fs::create_dir_all(&buffer_dir).map_err(|e| e.to_string())?;
-    }
+    let state = app.state::<RecordingState>();
+    let config = state.config.lock().map_err(|e| e.to_string())?;
 
-    let output_pattern = buffer_dir.join("out_%03d.ts");
+    // Use configured path or default to buffer dir
+    let output_pattern = if !config.recording.path.is_empty() {
+        std::path::PathBuf::from(&config.recording.path).join("out_%03d.ts")
+    } else {
+        let buffer_dir = app_cache.join("buffer");
+        if !buffer_dir.exists() {
+            std::fs::create_dir_all(&buffer_dir).map_err(|e| e.to_string())?;
+        }
+        buffer_dir.join("out_%03d.ts")
+    };
+    
     let output_path_str = output_pattern.to_string_lossy().to_string();
 
-    let builder = FfmpegCommandBuilder::new(output_path_str);
+    // Encoder selection
+    let encoder = if config.recording.encoder == "auto" {
+        encoder::get_best_encoder()
+    } else {
+        // Simple mapping, could be more robust
+        match config.recording.encoder.as_str() {
+            "h264_nvenc" => VideoEncoder::Nvenc,
+            "h264_amf" => VideoEncoder::Amf,
+            "h264_qsv" => VideoEncoder::Qsv,
+            "h264_vaapi" => VideoEncoder::Vaapi,
+            _ => VideoEncoder::X264,
+        }
+    };
+    
+    println!("Selected encoder: {:?}", encoder);
+
+    let builder = FfmpegCommandBuilder::new(output_path_str)
+        .with_video_codec(encoder.as_ffmpeg_codec().to_string())
+        .with_bitrate(config.recording.bitrate.clone())
+        .with_framerate(config.recording.framerate)
+        .with_resolution(config.recording.resolution.clone());
+        
     let args = builder.build();
 
     println!("Spawning FFmpeg with args: {:?}", args);

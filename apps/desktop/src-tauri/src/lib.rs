@@ -4,6 +4,7 @@ pub mod ffmpeg;
 
 pub mod commands;
 pub mod state;
+pub mod config;
 
 use state::RecordingState;
 
@@ -20,7 +21,9 @@ pub fn run() {
         commands::recording::stop_recording,
         commands::clip::create_clip,
         commands::upload::upload_clip,
-        commands::system::get_system_info
+        commands::system::get_system_info,
+        commands::config::get_config,
+        commands::config::update_config
     ])
     .setup(|app| {
       #[cfg(debug_assertions)]
@@ -28,6 +31,12 @@ pub fn run() {
         let window = app.get_webview_window("main").unwrap();
         window.open_devtools();
       }
+      
+      // Load config
+      let config = crate::config::AppConfig::load(app.handle());
+      let state = app.state::<RecordingState>();
+      *state.config.lock().unwrap() = config;
+
       Ok(())
     })
     .run(tauri::generate_context!())

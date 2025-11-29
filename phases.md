@@ -25,9 +25,9 @@
 - [x] Initialize `apps/desktop` (Tauri v2)
 - [x] Implement Rust FFmpeg sidecar management
 - [x] Implement basic Ring Buffer (write to disk)
-- [ ] Verify hardware acceleration detection (NVENC/AMF/QSV)
+- [x] Verify hardware acceleration detection (NVENC/AMF/QSV)
 - [ ] **Deliverable:** A running Tauri app that records the screen to a temp folder.
-- [ ] Implement Configuration Management (config.toml)
+- [x] Implement Configuration Management (config.toml)
 - [ ] Implement Buffer Cleanup Logic
 - [ ] Implement Basic Error Handling (Recording/FFmpeg)
 
