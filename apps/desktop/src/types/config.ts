@@ -22,6 +22,9 @@ export interface AppConfig {
     monitor_index: number;
     encoder: string;
     audio_source?: string;
+    system_audio_device?: string;
     audio_codec?: string;
+    buffer_duration?: number;
+    segment_time?: number;
   };
 }

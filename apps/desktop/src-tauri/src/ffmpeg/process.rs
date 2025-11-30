@@ -6,27 +6,33 @@ use crate::state::RecordingState;
 use crate::state::RecordingMessage;
 use std::sync::mpsc::Sender;
 
-pub fn start_recording_process(app: &AppHandle) -> Result<Sender<RecordingMessage>, String> {
+pub async fn start_recording_process(app: &AppHandle) -> Result<Sender<RecordingMessage>, String> {
     let _app_cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     let state = app.state::<RecordingState>();
     let config = state.config.lock().map_err(|e| e.to_string())?.clone(); 
 
-    // 1. Determine Output Path
-    let output_path_str = if !config.recording.path.is_empty() {
-        let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
-        let filename = format!("recording_{}.mp4", timestamp);
-        std::path::PathBuf::from(&config.recording.path).join(filename).to_string_lossy().to_string()
-    } else {
-        let video_dir = app.path().video_dir().map_err(|e| e.to_string())?;
-        let recordings_dir = video_dir.join("SquadSync");
-        if !recordings_dir.exists() {
-            std::fs::create_dir_all(&recordings_dir).map_err(|e| e.to_string())?;
-        }
-        
-        let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
-        let filename = format!("recording_{}.mp4", timestamp);
-        recordings_dir.join(filename).to_string_lossy().to_string()
-    };
+    // 1. Determine Output Path (Temp Buffer)
+    // Expand %TEMP% if present
+    let temp_path_str = config.recording.temp_path.replace("%TEMP%", &std::env::temp_dir().to_string_lossy());
+    let buffer_dir = std::path::PathBuf::from(temp_path_str);
+    
+    if !buffer_dir.exists() {
+        std::fs::create_dir_all(&buffer_dir).map_err(|e| e.to_string())?;
+    }
+
+    // Segment Pattern: clip_%03d.ts
+    let output_pattern = buffer_dir.join("clip_%03d.ts").to_string_lossy().to_string();
+    let playlist_path = buffer_dir.join("buffer.m3u8").to_string_lossy().to_string();
+
+    // Calculate Wrap Limit
+    let segment_time = config.recording.segment_time;
+    let buffer_duration = config.recording.buffer_duration;
+    let wrap_limit = (buffer_duration / segment_time) + 1; // +1 for safety overlap
+
+    println!("Buffer Dir: {:?}", buffer_dir);
+    println!("Segment Pattern: {}", output_pattern);
+    println!("Playlist: {}", playlist_path);
+    println!("Wrap Limit: {}", wrap_limit);
 
     // 2. Select Encoder
     let encoder = if config.recording.encoder == "auto" {
@@ -62,8 +68,6 @@ pub fn start_recording_process(app: &AppHandle) -> Result<Sender<RecordingMessag
     } else {
         (1920, 1080, 0, 0) // Fallback
     };
-
-
 
     // 4. Smart Resolution & Bitrate Logic
     let (target_width, target_height, use_scaler) = if let Some(res_str) = &config.recording.resolution {
@@ -103,8 +107,15 @@ pub fn start_recording_process(app: &AppHandle) -> Result<Sender<RecordingMessag
     println!("Configuring Recording: {}x{} @ {}fps, Bitrate: {}, Scaler: {}", 
         target_width, target_height, config.recording.framerate, bitrate, use_scaler);
 
-    // 5. Build Command
-    let builder = FfmpegCommandBuilder::new(output_path_str)
+    // 5. System Audio Setup (Just get the device name)
+    let system_audio_device = config.recording.system_audio_device.clone();
+    let system_audio_enabled = system_audio_device.is_some();
+    // We don't start capture here anymore, just pass the device name
+    // Default sample rate 48000, will be detected in session
+    let system_sample_rate = 48000; 
+    
+    // 6. Build Command
+    let builder = FfmpegCommandBuilder::new(output_pattern)
         .with_video_codec(encoder.as_ffmpeg_codec().to_string())
         .with_preset(config.recording.video_preset.clone())
         .with_tune(config.recording.video_tune.clone())
@@ -113,13 +124,17 @@ pub fn start_recording_process(app: &AppHandle) -> Result<Sender<RecordingMessag
         .with_framerate(config.recording.framerate)
         .with_resolution(if use_scaler { Some(format!("{}x{}", target_width, target_height)) } else { None })
         .with_video_size(format!("{}x{}", width, height))
-        .with_monitor_index(config.recording.monitor_index);
+        .with_monitor_index(config.recording.monitor_index)
+        .with_segment_config(segment_time, wrap_limit, playlist_path);
 
-    // 5. Spawn Session
+    // 7. Spawn Session
     RecordingSession::spawn(
         app.clone(),
         builder,
         config.recording.audio_source,
+        system_audio_enabled,
+        system_sample_rate,
+        system_audio_device,
         config.recording.audio_codec,
         config.recording.audio_bitrate,
     )

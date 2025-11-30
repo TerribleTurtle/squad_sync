@@ -10,6 +10,7 @@ pub enum RecordingMessage {
 pub struct RecordingState {
     pub tx: Mutex<Option<Sender<RecordingMessage>>>,
     pub config: Mutex<AppConfig>,
+    pub last_clip_timestamp: Mutex<Option<std::time::Instant>>,
 }
 
 impl RecordingState {
@@ -18,6 +19,7 @@ impl RecordingState {
             tx: Mutex::new(None),
             // Config will be loaded properly in setup, but we need a default here
             config: Mutex::new(AppConfig::default()),
+            last_clip_timestamp: Mutex::new(None),
         }
     }
 }

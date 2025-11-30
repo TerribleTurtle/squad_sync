@@ -31,15 +31,22 @@
 - [x] Implement Configuration Management (config.toml) & Advanced Overrides
 - [x] **High Performance Capture** (ddagrab + Zero-Copy)
 - [x] **Manual Recording Mode** (MP4 Output)
-- [ ] Implement Buffer Cleanup Logic
-- [ ] Implement Basic Error Handling (Recording/FFmpeg)
-- [ ] **Circular Buffer Mode** (Configurable Timer)
-- [ ] **Game/System Audio Capture**
-- [ ] **Fix System Hang on Stop**
+- [x] **Circular Buffer Mode** (Replay Buffer Engine) - *MPEG-TS Segments*
+- [ ] **Buffer Cleanup Logic** (Startup Cleanup)
+- [ ] **Game/System Audio Capture** (via Config)
 - [x] **Screen Selector** (Multi-Monitor Support)
 - [x] **Dynamic Bitrate & Smart Resolution**
+- [x] **Global Hotkey** (Alt+F10)
 
-## **Phase 3: Shared Infrastructure**
+## **Phase 3: MVP Robustness & Polish**
+**Goal:** Ensure the app is stable, safe, and performant enough for public release.
+**Priority:** HIGH
+- [ ] **Disk Space Watchdog** (Auto-disable if low disk space)
+- [ ] **Structured Error Handling** (AppError enum, User-friendly messages)
+- [ ] **Process Priority Management** (Prevent game lag)
+- [ ] **Verify Audio Sync** (Long duration test)
+
+## **Phase 4: Shared Infrastructure**
 **Goal:** Set up the data types and contracts for the full app.
 - [ ] `packages/shared`: Types, Zod Schemas, Constants
 - [ ] `packages/ffmpeg-commands`: Command builders
@@ -63,3 +70,12 @@
 - [ ] Implement Clip Generation (FFmpeg concat)
 - [ ] Implement R2 Upload (Presigned URLs)
 - [ ] Implement Playback Grid with Sync Logic
+
+## **Future Roadmap (Post-MVP)**
+**Goal:** Optimizations and architectural improvements for scale.
+- [ ] **Core Logic Extraction**: Move engine to `squad_sync_engine` crate.
+- [ ] **Custom Tauri Plugins**: Wrap recorder as a plugin.
+- [ ] **Zero-Copy IPC**: Shared memory for preview.
+- [ ] **Hardware Benchmarking**: Auto-detect capability.
+- [ ] **Sidecar Watchdog**: External process monitor.
+- [ ] **Integration Tests**: CI/CD pipeline for recording.

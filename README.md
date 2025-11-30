@@ -87,6 +87,7 @@ pnpm --filter desktop tauri build
     *   **Dynamic Bitrate**: Automatically calculates optimal bitrate based on resolution and framerate (0.1 bits/pixel).
     *   **Smart Scaler**: Bypasses scaling filters when recording at native resolution for zero-overhead capture.
     *   **Multi-Monitor**: Select any connected display for recording.
+    *   **Crash Resilience**: Uses MPEG-TS for temporary buffer segments to ensure data integrity even if the app crashes.
 
 ## 🤝 Contributing
 

@@ -13,12 +13,19 @@ pub struct AppConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RecordingConfig {
     pub path: String,
+    #[serde(default = "default_temp_path")]
+    pub temp_path: String,
     pub resolution: Option<String>,
     pub framerate: u32,
     pub bitrate: Option<String>,
+    #[serde(default = "default_buffer_duration")]
+    pub buffer_duration: u32,
+    #[serde(default = "default_segment_time")]
+    pub segment_time: u32,
     pub monitor_index: u32,
     pub encoder: String,
     pub audio_source: Option<String>,
+    pub system_audio_device: Option<String>,
     pub audio_codec: Option<String>,
     
     // Advanced Overrides (Hidden from default config)
@@ -32,6 +39,18 @@ pub struct RecordingConfig {
     pub audio_bitrate: Option<String>,
 }
 
+fn default_temp_path() -> String {
+    "%TEMP%\\SquadSync\\Buffer".to_string()
+}
+
+fn default_buffer_duration() -> u32 {
+    120
+}
+
+fn default_segment_time() -> u32 {
+    30
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         // Auto-detect default microphone
@@ -42,13 +61,17 @@ impl Default for AppConfig {
 
         Self {
             recording: RecordingConfig {
-                path: String::new(), // Empty string implies default temp dir
+                path: String::new(),
+                temp_path: String::from("%TEMP%\\SquadSync\\Buffer"), // Default temp path
                 resolution: Some("native".to_string()),
                 framerate: 60,
                 bitrate: None,
+                buffer_duration: 120, // 2 minutes default buffer
+                segment_time: 30,     // 30 second segments
                 monitor_index: 0,
                 encoder: "auto".to_string(),
                 audio_source,
+                system_audio_device: None,
                 audio_codec: None,
                 video_preset: None,
                 video_tune: None,

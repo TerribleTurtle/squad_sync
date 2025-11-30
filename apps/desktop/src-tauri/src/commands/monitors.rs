@@ -1,4 +1,4 @@
-use tauri::{command, AppHandle, Manager, Monitor};
+use tauri::{command, AppHandle, Manager};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]

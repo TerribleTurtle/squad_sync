@@ -6,6 +6,7 @@ pub mod state;
 pub mod config;
 pub mod audio;
 pub mod error;
+pub mod constants;
 
 use state::RecordingState;
 
@@ -16,16 +17,30 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
+        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+            if shortcut.matches(tauri_plugin_global_shortcut::Modifiers::ALT, tauri_plugin_global_shortcut::Code::F10) {
+                println!("Global Hotkey Triggered");
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    match crate::commands::replay::save_replay_impl(&app_handle).await {
+                        Ok(path) => println!("Replay saved via hotkey: {}", path),
+                        Err(e) => eprintln!("Failed to save replay via hotkey: {}", e),
+                    }
+                });
+            }
+        }
+    }).build())
     .manage(RecordingState::new())
     .invoke_handler(tauri::generate_handler![
-        commands::recording::start_recording,
-        commands::recording::stop_recording,
-        commands::clip::create_clip,
-        commands::upload::upload_clip,
+        commands::recording::enable_replay,
+        commands::recording::disable_replay,
+        commands::replay::save_replay,
         commands::system::get_system_info,
         commands::config::get_config,
         commands::config::update_config,
         commands::devices::get_audio_devices,
+        commands::devices::get_system_audio_devices,
         commands::monitors::get_monitors
     ])
     .setup(|app| {
@@ -38,7 +53,22 @@ pub fn run() {
       // Load config
       let config = crate::config::AppConfig::load(app.handle());
       let state = app.state::<RecordingState>();
-      *state.config.lock().unwrap() = config;
+      *state.config.lock().unwrap() = config.clone();
+
+      // Cleanup Temp Buffer on Startup
+      let temp_path_str = config.recording.temp_path.replace("%TEMP%", &std::env::temp_dir().to_string_lossy());
+      let buffer_dir = std::path::PathBuf::from(temp_path_str);
+      if buffer_dir.exists() {
+          println!("Cleaning up buffer directory: {:?}", buffer_dir);
+          let _ = std::fs::remove_dir_all(&buffer_dir);
+          let _ = std::fs::create_dir_all(&buffer_dir);
+      }
+
+      // Register Global Shortcut
+      use tauri_plugin_global_shortcut::GlobalShortcutExt;
+      if let Err(e) = app.handle().global_shortcut().register("Alt+F10") {
+          eprintln!("Failed to register global shortcut: {}", e);
+      }
 
       Ok(())
     })

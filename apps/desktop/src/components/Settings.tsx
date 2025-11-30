@@ -13,6 +13,7 @@ interface MonitorInfo {
 export function Settings() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
+  const [systemAudioDevices, setSystemAudioDevices] = useState<string[]>([]);
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -23,9 +24,10 @@ export function Settings() {
 
   async function loadData() {
     try {
-      const [loadedConfig, devices, monitorList] = await Promise.all([
+      const [loadedConfig, devices, systemDevices, monitorList] = await Promise.all([
         invoke<AppConfig>("get_config"),
         invoke<string[]>("get_audio_devices"),
+        invoke<string[]>("get_system_audio_devices"),
         invoke<MonitorInfo[]>("get_monitors"),
       ]);
       
@@ -52,6 +54,7 @@ export function Settings() {
 
       setConfig(loadedConfig);
       setAudioDevices(devices);
+      setSystemAudioDevices(systemDevices);
       setMonitors(monitorList);
     } catch (e) {
       console.error("Failed to load settings:", e);
@@ -122,9 +125,9 @@ export function Settings() {
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Recording Settings</h2>
       <form onSubmit={handleSave} className="space-y-4">
         
-        {/* Audio Source */}
+        {/* Audio Source (Microphone) */}
         <div>
-          <label className="block text-sm font-medium text-gray-700">Audio Source</label>
+          <label className="block text-sm font-medium text-gray-700">Microphone</label>
           <select
             value={config.recording.audio_source || ""}
             onChange={(e) => updateRecordingConfig("audio_source", e.target.value || null)}
@@ -132,6 +135,23 @@ export function Settings() {
           >
             <option value="">None</option>
             {audioDevices.map((device) => (
+              <option key={device} value={device}>
+                {device}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* System Audio Source */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700">System Audio</label>
+          <select
+            value={config.recording.system_audio_device || ""}
+            onChange={(e) => updateRecordingConfig("system_audio_device", e.target.value || null)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+          >
+            <option value="">None</option>
+            {systemAudioDevices.map((device) => (
               <option key={device} value={device}>
                 {device}
               </option>
@@ -181,6 +201,39 @@ export function Settings() {
                 <option value={60}>60 FPS (Smooth)</option>
                 <option value={30}>30 FPS (Efficient)</option>
               </select>
+            </div>
+        </div>
+
+        {/* Replay Buffer Settings */}
+        <div className="grid grid-cols-2 gap-4">
+            {/* Replay Duration */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Replay Duration</label>
+              <select
+                value={config.recording.buffer_duration || 120}
+                onChange={(e) => updateRecordingConfig("buffer_duration", parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+              >
+                <option value={30}>30 Seconds</option>
+                <option value={60}>1 Minute</option>
+                <option value={120}>2 Minutes</option>
+                <option value={300}>5 Minutes</option>
+                <option value={600}>10 Minutes</option>
+              </select>
+            </div>
+            
+            {/* Segment Time (Advanced - maybe hide later but useful for now) */}
+            <div>
+               <label className="block text-sm font-medium text-gray-700">Segment Size</label>
+               <select
+                 value={config.recording.segment_time || 30}
+                 onChange={(e) => updateRecordingConfig("segment_time", parseInt(e.target.value))}
+                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+               >
+                 <option value={15}>15 Seconds</option>
+                 <option value={30}>30 Seconds (Default)</option>
+                 <option value={60}>60 Seconds</option>
+               </select>
             </div>
         </div>
 
