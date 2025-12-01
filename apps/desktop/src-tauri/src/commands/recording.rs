@@ -17,12 +17,19 @@ pub async fn enable_replay(app: AppHandle) -> Result<(), String> {
 
     // Now await the process start
     match start_recording_process(&app).await {
-        Ok(tx) => {
+        Ok((tx, handle)) => {
             let state = app.state::<RecordingState>();
             
             // Store sender
-            let mut tx_guard = state.tx.lock().map_err(|e| e.to_string())?;
-            *tx_guard = Some(tx);
+            {
+                let mut tx_guard = state.tx.lock().map_err(|e| e.to_string())?;
+                *tx_guard = Some(tx);
+            }
+            // Store handle
+            {
+                let mut handle_guard = state.join_handle.lock().map_err(|e| e.to_string())?;
+                *handle_guard = Some(handle);
+            }
             
             Ok(())
         }
@@ -46,6 +53,20 @@ pub async fn disable_replay(app: AppHandle) -> Result<(), String> {
         } else {
             return Err("Replay Buffer not active".to_string());
         }
+    }
+
+    // Take handle to join outside lock
+    let handle_to_join = {
+        let mut handle_guard = state.join_handle.lock().map_err(|e| e.to_string())?;
+        handle_guard.take()
+    };
+
+    if let Some(handle) = handle_to_join {
+        log::info!("Waiting for recording thread to finish cleanup...");
+        if let Err(_) = handle.join() {
+            log::error!("Failed to join recording thread");
+        }
+        log::info!("Recording thread joined successfully");
     }
 
     Ok(())

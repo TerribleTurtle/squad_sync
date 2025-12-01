@@ -3,9 +3,9 @@ use crate::state::RecordingState;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-
 use regex::Regex;
 use serde::Deserialize;
+use chrono::{DateTime, Local, TimeZone, Duration};
 
 #[derive(Deserialize)]
 struct RecordingMetadata {
@@ -19,12 +19,12 @@ pub async fn save_replay(app: AppHandle) -> Result<String, String> {
 }
 
 pub async fn save_replay_impl(app: &AppHandle) -> Result<String, String> {
-    log::info!("Save Replay triggered (Decoupled Mode)");
-    let start_time = std::time::Instant::now();
-    
-    // Wait for FFmpeg to flush recent packets to disk
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    
+    log::info!("Save Replay triggered (Time-Based)");
+    let start_process_time = std::time::Instant::now();
+
+    // Wait for FFmpeg to flush recent packets
+    std::thread::sleep(std::time::Duration::from_millis(crate::constants::REPLAY_FLUSH_WAIT_MS));
+
     let state = app.state::<RecordingState>();
     let config = state.config.lock().map_err(|e| e.to_string())?.clone();
     let buffer_dir = PathBuf::from(&config.recording.temp_path);
@@ -34,482 +34,193 @@ pub async fn save_replay_impl(app: &AppHandle) -> Result<String, String> {
         log::warn!("Warning: Failed to cleanup buffer: {}", e);
     }
 
-    // 2. Read Metadata for Sync
-    let metadata_path = buffer_dir.join("metadata.json");
-    if !metadata_path.exists() {
-        return Err("Replay metadata not found (recording might not have started correctly)".to_string());
-    }
-    let metadata_content = fs::read_to_string(&metadata_path).map_err(|e| e.to_string())?;
-    let metadata: RecordingMetadata = serde_json::from_str(&metadata_content).map_err(|e| format!("Invalid metadata: {}", e))?;
+    // 2. Determine Trigger Time (NTP -> Local)
+    // Get NTP time (authoritative)
+    let ntp_time_ms = state.ntp_manager.get_ntp_time_ms();
+    let ntp_offset = state.ntp_manager.get_offset();
+    
+    // Convert back to Local System Time for file searching
+    // TriggerTime_Local = TriggerTime_NTP - Offset
+    // (Because FileTime = SystemTime)
+    let trigger_time_ms = if ntp_offset >= 0 {
+        ntp_time_ms.saturating_sub(ntp_offset as u64)
+    } else {
+        ntp_time_ms + ((-ntp_offset) as u64)
+    };
 
-    // 3. Setup Temp Dir for Stitching
-    let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let stitch_temp_dir = buffer_dir.join(format!("stitch_{}", timestamp));
+    let trigger_time = std::time::UNIX_EPOCH + std::time::Duration::from_millis(trigger_time_ms);
+    let trigger_datetime: DateTime<Local> = trigger_time.into();
+    
+    log::info!("Trigger Time: {} (NTP: {}, Offset: {})", trigger_datetime, ntp_time_ms, ntp_offset);
+
+    // 3. Define Time Range
+    let duration_sec = config.recording.buffer_duration as i64;
+    let start_time = trigger_datetime - Duration::seconds(duration_sec);
+    let end_time = trigger_datetime;
+
+    log::info!("Searching for segments between {} and {}", start_time, end_time);
+
+    // 4. Find Segments
+    let video_segments = find_segments_by_time(&buffer_dir, "video_", start_time, end_time)?;
+    if video_segments.is_empty() {
+        return Err("No video segments found for the requested time range".to_string());
+    }
+
+    // Audio is optional
+    let audio_segments = find_segments_by_time(&buffer_dir, "audio_", start_time, end_time).unwrap_or_default();
+    let has_audio = !audio_segments.is_empty();
+
+    // 4b. Smart Wait (Ensure active segment is finished)
+    // If the last segment is very recent, it might still be writing.
+    // We wait until a NEWER segment appears, confirming the previous one is closed.
+    if let Some(last_video) = video_segments.last() {
+        wait_for_segment_completion(last_video, &buffer_dir);
+    }
+    if let Some(last_audio) = audio_segments.last() {
+        wait_for_segment_completion(last_audio, &buffer_dir);
+    }
+
+    // 5. Setup Temp Dir
+    let timestamp_str = Local::now().format("%Y-%m-%d_%H-%M-%S");
+    let stitch_temp_dir = buffer_dir.join(format!("stitch_{}", timestamp_str));
     fs::create_dir_all(&stitch_temp_dir).map_err(|e| e.to_string())?;
 
-    // --- CAPTURE MAX SEQ ---
-    let playlist_path = buffer_dir.join("video_list.m3u8");
-    let content = fs::read_to_string(&playlist_path).unwrap_or_default();
-    let segments = parse_m3u8(&content);
+    // 6. Probe Start Time (Precision)
+    // We need the EXACT start time of the first video segment to calculate trim
+    let first_video_path = &video_segments[0];
+    let first_video_start_ms = probe_start_time(app, first_video_path).map_err(|e| format!("Failed to probe video start: {}", e))?;
     
-    // Capture the sequence number of the active segment (at trigger time)
-    let mut max_seq: Option<u32> = None;
-    if let Some(last_segment) = segments.last() {
-        if let Some(num) = get_seq_num(last_segment) {
-             // Check if the NEXT segment exists (active segment not yet in playlist)
-             // We need to reconstruct the filename pattern to check for existence
-             if let Some(start) = last_segment.find('_') {
-                 if let Some(end) = last_segment.rfind('.') {
-                     let prefix = &last_segment[..start+1];
-                     let ext = &last_segment[end+1..];
-                     
-                     let next_seq = num + 1;
-                     let next_name = format!("{}{:03}.{}", prefix, next_seq, ext);
-                     let next_path = buffer_dir.join(&next_name);
-                     
-                     let wrap_name = format!("{}{:03}.{}", prefix, 0, ext);
-                     let wrap_path = buffer_dir.join(&wrap_name);
-                     
-                     let mut found_next = false;
-                     
-                     if next_path.exists() {
-                         max_seq = Some(next_seq);
-                         found_next = true;
-                         log::info!("Triggered at active segment seq: {} (playlist at {})", next_seq, num);
-                     } else if wrap_path.exists() {
-                         // Check if 0 is newer than N
-                         if let Ok(meta_n) = fs::metadata(buffer_dir.join(last_segment)) {
-                             if let Ok(meta_0) = fs::metadata(&wrap_path) {
-                                 if let Ok(mod_n) = meta_n.modified() {
-                                     if let Ok(mod_0) = meta_0.modified() {
-                                         if mod_0 > mod_n {
-                                             max_seq = Some(0);
-                                             found_next = true;
-                                             log::info!("Triggered at active segment seq: 0 (playlist at {})", num);
-                                         }
-                                     }
-                                 }
-                             }
-                         }
-                     }
-                     
-                     if !found_next {
-                         max_seq = Some(num);
-                         log::info!("Triggered at segment seq: {}", num);
-                     }
-                 }
-             }
-        }
-    }
+    // Calculate Trim Start
+    // Target Start = Trigger - Duration
+    // Actual Start = First Segment Start
+    // Trim = Target Start - Actual Start
+    // If Target Start < Actual Start, we can't trim (we missed the start), so Trim = 0.
+    
+    let target_start_ms = trigger_time_ms - (duration_sec as u64 * 1000);
+    let trim_start_sec = if target_start_ms > first_video_start_ms {
+        (target_start_ms - first_video_start_ms) as f64 / 1000.0
+    } else {
+        0.0
+    };
 
-    if segments.is_empty() {
-        return Err("No segments found in playlist".to_string());
-    }
+    log::info!("Precision Trim: Target={}, Actual={}, Trim={:.3}s", target_start_ms, first_video_start_ms, trim_start_sec);
 
-    // --- SMART WAIT LOGIC ---
-    // Check if the active segment (max_seq) is up to date.
-    if let Some(seq) = max_seq {
-        // We need to construct the path for max_seq
-        // We can infer the prefix/ext from the last segment in the playlist
-        if let Some(last_segment) = segments.last() {
-             if let Some(start) = last_segment.find('_') {
-                 if let Some(end) = last_segment.rfind('.') {
-                     let prefix = &last_segment[..start+1];
-                     let ext = &last_segment[end+1..];
-                     let active_name = format!("{}{:03}.{}", prefix, seq, ext);
-                     let active_path = buffer_dir.join(&active_name);
-                     
-                     // Also check Audio segment
-                     // Assuming audio prefix is "audio_" and same extension
-                     let audio_name = format!("audio_{:03}.{}", seq, ext);
-                     let audio_path = buffer_dir.join(&audio_name);
-
-                     // Retry loop
-                     let max_retries = 15; // 15 seconds max wait
-                     for _ in 0..max_retries {
-                         let mut video_ready = false;
-                         let mut audio_ready = false;
-
-                         // Check Video
-                         if let Ok(meta) = fs::metadata(&active_path) {
-                             if meta.len() > 0 {
-                                 if let Ok(modified) = meta.modified() {
-                                     if let Ok(age) = std::time::SystemTime::now().duration_since(modified) {
-                                         if age.as_secs() <= 5 {
-                                             video_ready = true;
-                                         } else {
-                                             // If it's old, it might be finished. That's fine.
-                                             video_ready = true; 
-                                         }
-                                     }
-                                 }
-                             }
-                         }
-                         
-                         // Check Audio (if it exists)
-                         if audio_path.exists() {
-                             if let Ok(meta) = fs::metadata(&audio_path) {
-                                 if meta.len() > 0 {
-                                     if let Ok(modified) = meta.modified() {
-                                         if let Ok(age) = std::time::SystemTime::now().duration_since(modified) {
-                                             if age.as_secs() <= 5 {
-                                                 audio_ready = true;
-                                             } else {
-                                                 audio_ready = true;
-                                             }
-                                         }
-                                     }
-                                 }
-                             }
-                         } else {
-                             // If audio file doesn't exist yet, we should wait?
-                             // Or maybe audio is not enabled?
-                             // We can check if audio_list.m3u8 exists to know if audio is expected.
-                             if buffer_dir.join("audio_list.m3u8").exists() {
-                                 // Audio expected but missing. Wait.
-                                 audio_ready = false;
-                             } else {
-                                 // No audio expected.
-                                 audio_ready = true;
-                             }
-                         }
-
-                         if video_ready && audio_ready {
-                             log::info!("Active segments (V: {}, A: {}) seem ready. Proceeding.", active_name, audio_name);
-                             break;
-                         }
-
-                         log::warn!("Waiting for active segments... (V: {}, A: {})", active_name, audio_name);
-                         std::thread::sleep(std::time::Duration::from_millis(1000));
-                     }
-                 }
-             }
-        }
-    }
-
-    // Measure wait time (Smart Wait + overhead) to compensate for future footage
-    let wait_time = start_time.elapsed().as_secs_f64();
-    log::info!("Replay Wait Time: {:.2}s", wait_time);
-
-    // 4. Stitch Video
+    // 7. Stitch Video
     let temp_video_path = stitch_temp_dir.join("temp_video.mp4");
-    
-    let (video_stitched, video_start_seq) = stitch_track(
-        &buffer_dir, 
-        &stitch_temp_dir,
-        "video_list.m3u8", 
-        "video_", 
-        &temp_video_path, 
-        config.recording.buffer_duration, 
-        config.recording.segment_time,
-        max_seq
-    )?;
+    stitch_segments(app, &video_segments, &stitch_temp_dir, &temp_video_path)?;
 
-    if !video_stitched {
-        let _ = fs::remove_dir_all(&stitch_temp_dir);
-        return Err("Failed to stitch video track (no segments found)".to_string());
-    }
-
-    // 5. Stitch Audio (Optional)
-    // 5. Stitch Audio (Optional)
+    // 8. Stitch Audio
     let temp_audio_path = stitch_temp_dir.join("temp_audio.mp4");
-    let mut audio_stitched = false;
-    let mut audio_start_seq = 0;
-
-    // Retry loop for Audio Sync
-    // Audio recording might lag slightly behind video. We loop until audio duration is close to video duration.
-    let video_duration = crate::ffmpeg::utils::get_file_duration(&temp_video_path).unwrap_or(0.0);
-    
-    for attempt in 1..=5 {
-        let res = stitch_track(
-            &buffer_dir, 
-            &stitch_temp_dir,
-            "audio_list.m3u8", 
-            "audio_", 
-            &temp_audio_path, 
-            config.recording.buffer_duration, 
-            config.recording.segment_time,
-            max_seq
-        );
-
-        match res {
-            Ok((stitched, seq)) => {
-                if stitched {
-                    let audio_duration = crate::ffmpeg::utils::get_file_duration(&temp_audio_path).unwrap_or(0.0);
-                    
-                    // If audio is significantly shorter than video (e.g. > 0.5s difference), it's lagging.
-                    if audio_duration >= video_duration - 0.5 {
-                        audio_stitched = true;
-                        audio_start_seq = seq;
-                        log::info!("Audio stitched successfully (Duration: {:.2}s, Video: {:.2}s)", audio_duration, video_duration);
-                        break;
-                    } else {
-                        log::warn!("Audio lagging (Attempt {}/5): V={:.2}s, A={:.2}s. Waiting...", attempt, video_duration, audio_duration);
-                    }
-                } else {
-                    log::warn!("Audio stitch returned false (Attempt {}/5). Waiting...", attempt);
-                }
-            },
-            Err(e) => {
-                log::warn!("Audio stitching failed (Attempt {}/5): {}. Waiting...", attempt, e);
-            }
-        }
-        
-        if attempt < 5 {
-            std::thread::sleep(std::time::Duration::from_millis(1000));
-        }
+    if has_audio {
+        stitch_segments(app, &audio_segments, &stitch_temp_dir, &temp_audio_path)?;
     }
 
-    // 6. Merge
-    let output_filename = format!("Replay_{}.mp4", timestamp);
+    // 9. Merge & Trim
+    let output_filename = format!("Replay_{}.mp4", timestamp_str);
     let output_dir = if !config.recording.path.is_empty() {
         PathBuf::from(&config.recording.path)
     } else {
         app.path().video_dir().map_err(|e| e.to_string())?.join("SquadSync")
     };
-    
+
     if !output_dir.exists() {
         fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
     }
     let output_path = output_dir.join(&output_filename);
 
-    log::info!("Merging to: {:?}", output_path);
+    let ffmpeg_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffmpeg")
+        .map_err(|e| format!("FFmpeg not found: {}", e))?;
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut cmd = Command::new(ffmpeg_path);
     cmd.arg("-y");
 
-    // Input 0: Video
-    // Input 1: Audio (if exists)
-    
-    if audio_stitched {
-        // Calculate Delay / Trim
-        let v_start = metadata.video_start_time;
-        let a_start = metadata.audio_start_time;
-        let segment_ms = (config.recording.segment_time as u64) * 1000;
+    // Input Video
+    cmd.arg("-ss").arg(trim_start_sec.to_string());
+    cmd.arg("-i").arg(&temp_video_path);
 
-        // Calculate Absolute Start Time of the first STITCHED segment
-        let v_abs_start = v_start + (video_start_seq as u64 * segment_ms);
-        let a_abs_start = a_start + (audio_start_seq as u64 * segment_ms);
-
-        // Measure actual stitched duration to determine start offset
-        // We want the LAST `buffer_duration` seconds.
-        // So we need to skip `actual_duration - buffer_duration`.
-        // BUT, actual_duration includes the `wait_time` (future footage).
-        // We want to stop at `actual_duration - wait_time`.
-        // So we want the window [actual - wait - buffer, actual - wait].
-        // So start_offset = actual - wait - buffer.
+    if has_audio {
+        // Audio might need a different trim if it started at a different time?
+        // Ideally, if we use wallclock timestamps, they should align.
+        // But we are stitching separate files.
+        // Let's assume they align roughly or use the same trim for now.
+        // For frame-perfect audio, we should probe audio start too.
         
-        let mut start_offset = 0.0;
-        if let Ok(actual_duration) = crate::ffmpeg::utils::get_file_duration(&temp_video_path) {
-            let target_duration = config.recording.buffer_duration as f64;
-            // Calculate offset to keep the desired window ending at Trigger Time
-            let calculated_offset = actual_duration - target_duration - wait_time;
-            
-            if calculated_offset > 0.0 {
-                start_offset = calculated_offset;
-                log::info!("Trimming start by {:.2}s (Actual: {:.2}s, Wait: {:.2}s, Target: {:.2}s)", start_offset, actual_duration, wait_time, target_duration);
+        let first_audio_path = &audio_segments[0];
+        if let Ok(first_audio_start_ms) = probe_start_time(app, first_audio_path) {
+             let audio_trim_sec = if target_start_ms > first_audio_start_ms {
+                (target_start_ms - first_audio_start_ms) as f64 / 1000.0
             } else {
-                log::warn!("Buffer too short for full duration (Actual: {:.2}s, Wait: {:.2}s)", actual_duration, wait_time);
-            }
-        }
-
-        // Audio Sync Logic
-        // We need to adjust the individual stream seeks based on the global start_offset
-        // But -ss on input applies BEFORE the global seek? No, global seek applies to output?
-        // Actually, if we use -ss on INPUT, it seeks into that input.
-        // If we want to sync A and V, we need relative offset.
-        // Then we want to apply a global offset to the RESULT.
-        // But we can't easily apply global offset to result without re-encoding or complex filter.
-        // EASIER: Apply the start_offset to BOTH inputs, plus the relative sync offset.
-        
-        let mut v_seek = start_offset;
-        let mut a_seek = start_offset;
-
-        if a_abs_start > v_abs_start {
-            // Audio starts LATER. Video has extra content.
-            // We need to skip MORE of video to match audio start.
-            let diff_ms = a_abs_start - v_abs_start;
-            let diff_sec = diff_ms as f64 / 1000.0;
-            v_seek += diff_sec;
-            log::info!("Sync: Video starts earlier. Adding {}s to Video seek.", diff_sec);
+                0.0
+            };
+            cmd.arg("-ss").arg(audio_trim_sec.to_string());
         } else {
-            // Video starts LATER. Audio has extra content.
-            let diff_ms = v_abs_start - a_abs_start;
-            let diff_sec = diff_ms as f64 / 1000.0;
-            a_seek += diff_sec;
-            log::info!("Sync: Audio starts earlier. Adding {}s to Audio seek.", diff_sec);
+            // Fallback
+            cmd.arg("-ss").arg(trim_start_sec.to_string());
         }
-
-        log::info!("Final Seeks -> Video: {:.2}s, Audio: {:.2}s", v_seek, a_seek);
-
-        // Apply Seeks
-        // Note: -ss before -i is fast but might not be frame-accurate for copy?
-        // For accurate cutting of "copy" streams, we might need -ss after -i?
-        // But -ss after -i with -c copy is also valid but might start at keyframe.
-        // Given we want to keep the END, starting at a keyframe slightly before target is fine.
-        // But if we are too early, we might exceed duration?
-        // Let's use -ss BEFORE -i for speed, it resets timestamps.
         
-        cmd.arg("-ss").arg(v_seek.to_string());
-        cmd.arg("-i").arg(&temp_video_path);
-        
-        cmd.arg("-ss").arg(a_seek.to_string());
         cmd.arg("-i").arg(&temp_audio_path);
+    }
 
-        cmd.arg("-map").arg("0:v");
+    // Map & Encode
+    cmd.arg("-map").arg("0:v");
+    if has_audio {
         cmd.arg("-map").arg("1:a");
-        cmd.arg("-c:v").arg("copy");
-        // Transcode PCM to AAC for final MP4
         cmd.arg("-c:a").arg("aac");
         cmd.arg("-b:a").arg("192k");
-        cmd.arg("-ac").arg("2");
-        cmd.arg("-ar").arg("48000");
-        
-        // Limit duration to the requested buffer duration
-        cmd.arg("-t").arg(config.recording.buffer_duration.to_string());
-        
-        cmd.arg("-movflags").arg("+faststart");
-    } else {
-        // Video only
-        cmd.arg("-i").arg(&temp_video_path);
-        log::warn!("Merging Video Only (Audio missing/empty)");
-        cmd.arg("-map").arg("0:v");
-        cmd.arg("-c").arg("copy");
     }
 
+    cmd.arg("-c:v").arg("copy");
+    cmd.arg("-t").arg(duration_sec.to_string());
+    cmd.arg("-movflags").arg("+faststart");
     cmd.arg(&output_path);
 
-    let status = cmd.status().map_err(|e| format!("Failed to execute ffmpeg merge: {}", e))?;
+    let status = cmd.status().map_err(|e| format!("Merge failed: {}", e))?;
 
     // Cleanup
-    if let Err(e) = fs::remove_dir_all(&stitch_temp_dir) {
-        log::error!("Failed to remove temp stitch dir: {}", e);
-    }
+    let _ = fs::remove_dir_all(&stitch_temp_dir);
 
     if status.success() {
         Ok(output_path.to_string_lossy().to_string())
     } else {
-        Err("Merge process failed".to_string())
+        Err("FFmpeg merge process failed".to_string())
     }
 }
 
-fn stitch_track(
-    buffer_dir: &PathBuf,
-    stitch_temp_dir: &PathBuf,
-    playlist_name: &str,
-    segment_prefix: &str,
-    output_path: &PathBuf,
-    duration_sec: u32,
-    segment_time: u32,
-    max_seq: Option<u32>
-) -> Result<(bool, u32), String> {
-    let playlist_path = buffer_dir.join(playlist_name);
-    if !playlist_path.exists() {
-        return Ok((false, 0));
+fn find_segments_by_time(
+    dir: &PathBuf, 
+    prefix: &str, 
+    start: DateTime<Local>, 
+    end: DateTime<Local>
+) -> Result<Vec<PathBuf>, String> {
+    let mut segments = Vec::new();
+    // Regex: prefix + YYYYMMDDHHMMSS + .mkv
+    // e.g. video_20251201071802.mkv
+    let pattern = format!(r"^{}(\d{{14}})\.mkv$", prefix); 
+    let re = Regex::new(&pattern).map_err(|e| e.to_string())?;
+
+    if !dir.exists() {
+        return Ok(vec![]);
     }
 
-    let content = fs::read_to_string(&playlist_path).map_err(|e| e.to_string())?;
-    let mut segments = parse_m3u8(&content);
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
+            if let Some(caps) = re.captures(fname) {
+                if let Some(ts_str) = caps.get(1) {
+                    // Parse timestamp
+                    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
+                        if let Some(ts) = Local.from_local_datetime(&naive).single() {
+                            // Check overlap
+                            // Segment covers [ts, ts + 2s] roughly (actually 15s in config, but logic handles overlap)
+                            // We want segments where End > Start_Req AND Start < End_Req
+                            // ffprobe or config would be better for duration, but let's assume 15s based on logs
+                            let seg_start = ts;
+                            let seg_end = ts + Duration::seconds(15); 
 
-    // Find all subsequent segments (lookahead)
-    if let Some(last_segment) = segments.last().cloned() {
-        // Determine extension from the last segment
-        let extension = std::path::Path::new(&last_segment)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("mkv"); // Default to mkv if unknown, but it should be there
-
-        // format: prefix_XXX.ext
-        // Regex: prefix_(\d+)\.ext
-        let re_str = format!(r"{}(\d+)\.{}", segment_prefix, extension);
-        let re = Regex::new(&re_str).unwrap();
-        
-        if let Some(caps) = re.captures(&last_segment) {
-            if let Some(num_match) = caps.get(1) {
-                if let Ok(mut num) = num_match.as_str().parse::<u32>() {
-                    // Loop to find ALL subsequent segments
-                    loop {
-                        let next_sequential = num + 1;
-                        let next_wrapped = 0;
-                        
-                        let seq_name = format!("{}{:03}.{}", segment_prefix, next_sequential, extension);
-                        let wrap_name = format!("{}{:03}.{}", segment_prefix, next_wrapped, extension);
-                        
-                        let seq_path = buffer_dir.join(&seq_name);
-                        let wrap_path = buffer_dir.join(&wrap_name);
-                        
-                        let mut next_found = None;
-
-                        // Check timestamps to decide which is "next"
-                        let current_name = format!("{}{:03}.{}", segment_prefix, num, extension);
-                        let current_path = buffer_dir.join(&current_name);
-                        
-                        let current_modified = if let Ok(m) = fs::metadata(&current_path) {
-                            m.modified().ok()
-                        } else {
-                            None
-                        };
-
-                        // Helper to check if a candidate is valid (exists)
-                        let check_candidate = |path: &PathBuf, name: &String| -> Option<(PathBuf, String, Option<std::time::SystemTime>)> {
-                            if path.exists() {
-                                if let Ok(m) = fs::metadata(path) {
-                                    return Some((path.clone(), name.clone(), m.modified().ok()));
-                                }
-                                // Fallback if metadata fails but exists
-                                return Some((path.clone(), name.clone(), None));
+                            if seg_end > start && seg_start < end {
+                                segments.push((path, seg_start));
                             }
-                            None
-                        };
-
-                        let seq_candidate = check_candidate(&seq_path, &seq_name);
-                        let wrap_candidate = check_candidate(&wrap_path, &wrap_name);
-
-                        match (seq_candidate, wrap_candidate) {
-                            (Some(seq), Some(wrap)) => {
-                                // Both exist. Compare timestamps if available.
-                                match (seq.2, wrap.2) {
-                                    (Some(t_seq), Some(t_wrap)) => {
-                                         // If we have a current time, compare against it?
-                                         // Actually, we just want the NEWER one.
-                                         if t_seq > t_wrap {
-                                             next_found = Some((seq.1, seq.0, next_sequential));
-                                         } else {
-                                             next_found = Some((wrap.1, wrap.0, next_wrapped));
-                                         }
-                                    },
-                                    _ => {
-                                        // If timestamps missing, prefer sequential? Or wrap?
-                                        // This is ambiguous. Let's guess sequential.
-                                        next_found = Some((seq.1, seq.0, next_sequential));
-                                    }
-                                }
-                            },
-                            (Some(seq), None) => next_found = Some((seq.1, seq.0, next_sequential)),
-                            (None, Some(wrap)) => next_found = Some((wrap.1, wrap.0, next_wrapped)),
-                            (None, None) => {}
-                        }
-
-                        if let Some((name, _path, next_val)) = next_found {
-                            log::info!("Found active/next segment: {}", name);
-                            segments.push(name);
-                            num = next_val;
-
-                            // Terminate if we reached the target max_seq
-                            if let Some(max) = max_seq {
-                                if num == max {
-                                    break;
-                                }
-                            }
-                            
-                            // Safety break to prevent infinite loops if max_seq is missing or unreachable
-                            if segments.len() > 100 {
-                                log::warn!("Segment lookahead hit safety limit (100 segments). Breaking loop.");
-                                break;
-                            }
-                        } else {
-                            log::debug!("No subsequent segment found after {}", num);
-                            break;
                         }
                     }
                 }
@@ -517,99 +228,126 @@ fn stitch_track(
         }
     }
 
-    if segments.is_empty() {
-        return Ok((false, 0));
-    }
+    // Sort by time
+    segments.sort_by_key(|k| k.1);
 
-    // Filter segments based on max_seq if provided
-    // Filter segments based on max_seq if provided
-    // We use truncation (stop after max_seq) to handle wrapping correctly.
-    let filtered_segments: Vec<String> = if let Some(max) = max_seq {
-        let mut keep = Vec::new();
-        let mut found = false;
-        for seg in segments.iter() {
-            keep.push(seg.clone());
-            if let Some(num) = get_seq_num(seg) {
-                if num == max {
-                    found = true;
-                    break;
+    if segments.is_empty() {
+        log::warn!("No segments found for range: {} to {} (Prefix: {})", start, end, prefix);
+        // Debug scan
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Some(fname) = entry.path().file_name().and_then(|n| n.to_str()) {
+                    if fname.starts_with(prefix) && fname.ends_with(".mkv") {
+                         log::warn!("  Candidate ignored (Time mismatch?): {}", fname);
+                    }
                 }
             }
         }
-        if found {
-            keep
-        } else {
-            // If max_seq not found in the list, we assume the list hasn't reached it yet 
-            // (or it's ahead of the list, but we can't easily distinguish without more logic).
-            // Given we just captured max_seq, it's likely valid.
-            segments
-        }
-    } else {
-        segments
-    };
-
-    if filtered_segments.is_empty() {
-        return Ok((false, 0));
     }
 
-    // Select Segments
-    let segments_needed = (duration_sec as f32 / segment_time as f32).ceil() as usize + 1;
-    let segments_to_stitch = if segments_needed > filtered_segments.len() {
-        &filtered_segments[..]
-    } else {
-        &filtered_segments[filtered_segments.len() - segments_needed..]
-    };
+    Ok(segments.into_iter().map(|(p, _)| p).collect())
+}
 
-    // Create Concat List
-    let concat_list_path = stitch_temp_dir.join(format!("{}_concat.txt", segment_prefix));
-    let mut concat_content = String::new();
-    let mut first_seq_num = 0;
-    let mut first_set = false;
+fn probe_start_time(app: &AppHandle, path: &PathBuf) -> Result<u64, String> {
+    // 1. Parse Filename for approximate Epoch (Fallback & Validation)
+    let fname = path.file_name().and_then(|n| n.to_str()).ok_or("Invalid filename")?;
+    let re = Regex::new(r"(\d{14})\.mkv").map_err(|e| e.to_string())?;
+    let filename_epoch_ms = if let Some(caps) = re.captures(fname) {
+        if let Some(ts_str) = caps.get(1) {
+            if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
+                if let Some(ts) = Local.from_local_datetime(&naive).single() {
+                     Some(ts.timestamp_millis() as u64)
+                } else { None }
+            } else { None }
+        } else { None }
+    } else { None };
 
-    for segment_name in segments_to_stitch {
-        let clean_name = segment_name.trim();
-        
-        // Extract sequence number from the first segment
-        if !first_set {
-             if let Some(start) = clean_name.find('_') {
-                 if let Some(end) = clean_name.rfind('.') {
-                     if start < end {
-                         let num_str = &clean_name[start+1..end];
-                         if let Ok(num) = num_str.parse::<u32>() {
-                             first_seq_num = num;
-                             first_set = true;
-                         }
-                     }
-                 }
+    // 2. Probe with ffprobe
+    let ffprobe_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffprobe")
+        .map_err(|e| format!("FFprobe not found: {}", e))?;
+
+    let output = Command::new(ffprobe_path)
+        .args(&[
+            "-v", "error",
+            "-show_entries", "format=start_time",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            path.to_string_lossy().as_ref()
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let mut probe_epoch_ms = None;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Ok(start_sec) = stdout.trim().parse::<f64>() {
+            probe_epoch_ms = Some((start_sec * 1000.0) as u64);
+        }
+    }
+
+    // 3. Decision Logic
+    match (filename_epoch_ms, probe_epoch_ms) {
+        (Some(fn_ms), Some(pr_ms)) => {
+            // If probe is "reasonable" (e.g. > year 2000), use it.
+            // 946684800000 is year 2000.
+            if pr_ms > 946684800000 {
+                // It's likely Epoch. Use it for precision.
+                // Sanity check: is it close to filename? (within 1 hour?)
+                // If it's wildly different, trust filename?
+                // Actually, if we used wallclock, it should be very close.
+                Ok(pr_ms)
+            } else {
+                // Probe is likely relative (0 or small).
+                // We want Epoch.
+                // But we wanted sub-second precision!
+                // If probe is 0.0, we lose sub-second.
+                // If probe is 0.123, maybe we can add it to filename?
+                // Risk: Filename is integer second. We don't know if it rounded down or up?
+                // strftime %S usually truncates.
+                // So Filename Time <= Actual Time.
+                // If probe is relative, it might be offset from Filename Time?
+                // No, relative usually means "from start of file".
+                // Let's just fallback to filename for safety to fix the "empty clip" bug first.
+                log::warn!("Probe returned non-Epoch time ({}). Falling back to filename time ({}).", pr_ms, fn_ms);
+                Ok(fn_ms)
+            }
+        },
+        (Some(fn_ms), None) => {
+            log::warn!("Probe failed. Falling back to filename time.");
+            Ok(fn_ms)
+        },
+        (None, Some(pr_ms)) => {
+            // No filename time? Trust probe if it looks like Epoch.
+             if pr_ms > 946684800000 {
+                 Ok(pr_ms)
+             } else {
+                 Err("Probe returned relative time and filename parsing failed.".to_string())
              }
-        }
-
-        let source_path = buffer_dir.join(clean_name);
-        let dest_path = stitch_temp_dir.join(clean_name);
-
-        if !source_path.exists() { continue; }
-        
-        // Copy with Retry
-        if let Err(e) = copy_segment(&source_path, &dest_path) {
-            log::error!("Failed to copy segment {}: {}", clean_name, e);
-            continue;
-        }
-
-        let dest_path_str = dest_path.to_string_lossy().replace("\\", "/");
-        concat_content.push_str(&format!("file '{}'\n", dest_path_str));
+        },
+        (None, None) => Err("Failed to determine start time from both probe and filename.".to_string())
     }
+}
 
-    if concat_content.is_empty() {
-        return Ok((false, 0));
+fn stitch_segments(app: &AppHandle, segments: &[PathBuf], temp_dir: &PathBuf, output_path: &PathBuf) -> Result<(), String> {
+    let list_path = temp_dir.join("concat_list.txt");
+    let mut content = String::new();
+    
+    for seg in segments {
+        // Copy to temp dir to avoid file locking issues or path issues?
+        // Or just reference absolute path. FFmpeg supports absolute paths in concat list.
+        // But Windows paths need escaping.
+        let path_str = seg.to_string_lossy().replace("\\", "/");
+        content.push_str(&format!("file '{}'\n", path_str));
     }
+    
+    fs::write(&list_path, content).map_err(|e| e.to_string())?;
 
-    fs::write(&concat_list_path, concat_content).map_err(|e| e.to_string())?;
+    let ffmpeg_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffmpeg")
+        .map_err(|e| format!("FFmpeg not found: {}", e))?;
 
-    // Run FFmpeg Concat
-    let status = Command::new("ffmpeg")
+    let status = Command::new(ffmpeg_path)
         .arg("-f").arg("concat")
         .arg("-safe").arg("0")
-        .arg("-i").arg(&concat_list_path)
+        .arg("-i").arg(&list_path)
         .arg("-c").arg("copy")
         .arg("-y")
         .arg(output_path)
@@ -617,56 +355,32 @@ fn stitch_track(
         .map_err(|e| e.to_string())?;
 
     if status.success() {
-        // Check if file exists and has size
-        if let Ok(meta) = fs::metadata(output_path) {
-            if meta.len() > 0 {
-                return Ok((true, first_seq_num));
-            }
-        }
+        Ok(())
+    } else {
+        Err("Stitch failed".to_string())
     }
-    
-    Ok((false, 0))
-}
-
-fn parse_m3u8(content: &str) -> Vec<String> {
-    let mut segments = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with('#') && !trimmed.is_empty() {
-            segments.push(trimmed.to_string());
-        }
-    }
-    segments
 }
 
 pub fn cleanup_buffer(buffer_dir: &PathBuf, retention_seconds: u32) -> std::io::Result<()> {
-    if !buffer_dir.exists() {
-        return Ok(());
-    }
-
-    let now = std::time::SystemTime::now();
-    let retention_duration = std::time::Duration::from_secs(retention_seconds as u64);
+    if !buffer_dir.exists() { return Ok(()); }
+    
+    let now = Local::now();
+    let retention = Duration::seconds(retention_seconds as i64);
+    
+    // Regex for new pattern
+    let re = Regex::new(r"(video|audio)_(\d{14})\.mkv").unwrap();
 
     for entry in fs::read_dir(buffer_dir)? {
         let entry = entry?;
         let path = entry.path();
-        
-        // Only target .mkv files that look like segments
-        if let Some(ext) = path.extension() {
-            if ext == "mkv" {
-                if let Some(fname) = path.file_name() {
-                    let fname_str = fname.to_string_lossy();
-                    if fname_str.starts_with("video_") || fname_str.starts_with("audio_") {
-                        // Check modification time
-                        if let Ok(metadata) = entry.metadata() {
-                            if let Ok(modified) = metadata.modified() {
-                                if let Ok(age) = now.duration_since(modified) {
-                                    if age > retention_duration {
-                                        log::info!("Cleaning up old segment: {:?}", path);
-                                        let _ = fs::remove_file(path);
-                                    }
-                                }
-                            }
+        if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
+            if let Some(caps) = re.captures(fname) {
+                if let Some(ts_str) = caps.get(2) {
+                    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
+                        if let Some(ts) = Local.from_local_datetime(&naive).single() {
+                             if now - ts > retention {
+                                 let _ = fs::remove_file(path);
+                             }
                         }
                     }
                 }
@@ -676,99 +390,108 @@ pub fn cleanup_buffer(buffer_dir: &PathBuf, retention_seconds: u32) -> std::io::
     Ok(())
 }
 
-fn copy_segment(source: &PathBuf, dest: &PathBuf) -> std::io::Result<u64> {
-    let mut attempts = 0;
-    let max_attempts = 20; // Increased retries for active segment
+fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBuf) {
+    // Extract timestamp from segment
+    let re = Regex::new(r"(\d{14})\.mkv").unwrap();
+    let fname = segment_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     
-    loop {
-        match fs::copy(source, dest) {
-            Ok(bytes) => return Ok(bytes),
-            Err(e) => {
-                attempts += 1;
-                if attempts >= max_attempts {
-                    return Err(e);
-                }
-                // Check if it's a sharing violation or busy error (OS specific, but we can just retry on any error for now)
-                log::warn!("Copy failed for {:?} (attempt {}/{}): {}", source, attempts, max_attempts, e);
-                std::thread::sleep(std::time::Duration::from_millis(50)); // Faster retries
-            }
-        }
-    }
-}
+    let current_ts = if let Some(caps) = re.captures(fname) {
+        if let Some(ts_str) = caps.get(1) {
+            chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S").ok()
+        } else { None }
+    } else { None };
 
-fn get_seq_num(name: &str) -> Option<u32> {
-    if let Some(start) = name.find('_') {
-        if let Some(end) = name.rfind('.') {
-            if start < end {
-                return name[start+1..end].parse::<u32>().ok();
+    if let Some(current_naive) = current_ts {
+        let current_time = Local.from_local_datetime(&current_naive).single().unwrap();
+        
+        // Wait loop
+        let max_retries = 10; // 5 seconds (10 * 500ms)
+        for _ in 0..max_retries {
+            // Check if a newer file exists
+            let mut newer_found = false;
+            if let Ok(entries) = fs::read_dir(buffer_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if let Some(caps) = re.captures(name) {
+                            if let Some(ts_str) = caps.get(1) {
+                                if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
+                                    if let Some(ts) = Local.from_local_datetime(&naive).single() {
+                                        if ts > current_time {
+                                            newer_found = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
+
+            if newer_found {
+                log::info!("Newer segment found. Active segment {} considered safe.", fname);
+                return;
+            }
+
+            // Also check if file hasn't been modified for a while (fallback if recording stopped)
+            if let Ok(meta) = fs::metadata(segment_path) {
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(age) = std::time::SystemTime::now().duration_since(modified) {
+                        if age.as_millis() > 1000 {
+                            log::info!("Segment {} inactive for >1s. Proceeding.", fname);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            log::debug!("Waiting for segment {} to finish...", fname);
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
+        log::warn!("Timed out waiting for segment {} completion. Proceeding anyway.", fname);
     }
-    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs::File;
-    use std::io::Write;
 
     #[test]
-    fn test_stitch_track_wrapping() {
-        let temp_dir = std::env::temp_dir().join("squad_sync_test_wrapping");
-        let _ = fs::remove_dir_all(&temp_dir); // Clean start
+    fn test_find_segments_by_time() {
+        let temp_dir = std::env::temp_dir().join("squad_sync_test_time");
+        let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
-        let buffer_dir = temp_dir.join("buffer");
-        let stitch_dir = temp_dir.join("stitch");
-        fs::create_dir_all(&buffer_dir).unwrap();
-        fs::create_dir_all(&stitch_dir).unwrap();
+        // Create segments
+        // Segment 1: 2024-01-01 10:00:00 (Duration 2s) -> Ends 10:00:02
+        // Segment 2: 2024-01-01 10:00:02 (Duration 2s) -> Ends 10:00:04
+        // Segment 3: 2024-01-01 10:00:04 (Duration 2s) -> Ends 10:00:06
 
-        // Create segments: 0, 1, 2. Wrap limit 3.
-        // We want to simulate: Playlist has [2]. We want to find [0].
-        
-        let create_segment = |name: &str| {
-            let p = buffer_dir.join(name);
-            let mut f = File::create(p).unwrap();
-            f.write_all(b"dummy data").unwrap();
+        let create_file = |name: &str| {
+            File::create(temp_dir.join(name)).unwrap();
         };
 
-        create_segment("video_000.mkv");
-        create_segment("video_001.mkv");
-        create_segment("video_002.mkv");
+        create_file("video_20240101100000.mkv");
+        create_file("video_20240101100002.mkv");
+        create_file("video_20240101100004.mkv");
 
-        // Playlist points to 002
-        let playlist_path = buffer_dir.join("video_list.m3u8");
-        fs::write(&playlist_path, "video_002.mkv").unwrap();
+        // Request: 10:00:01 to 10:00:03
+        // Should include Segment 1 (ends 10:00:02 > 10:00:01) and Segment 2 (starts 10:00:02 < 10:00:03)
+        // Segment 3 starts 10:00:04, which is > 10:00:03, so excluded.
 
-        let output_path = stitch_dir.join("output.mp4");
+        let start_naive = chrono::NaiveDateTime::parse_from_str("20240101100001", "%Y%m%d%H%M%S").unwrap();
+        let end_naive = chrono::NaiveDateTime::parse_from_str("20240101100003", "%Y%m%d%H%M%S").unwrap();
+        
+        let start = Local.from_local_datetime(&start_naive).unwrap();
+        let end = Local.from_local_datetime(&end_naive).unwrap();
 
-        // We can't easily mock Command::new("ffmpeg"), so this test will fail at the ffmpeg step.
-        // But we can verify the concat list was created correctly BEFORE ffmpeg runs.
-        // We'll ignore the result of stitch_track because it will fail at ffmpeg.
-        let _ = stitch_track(
-            &buffer_dir,
-            &stitch_dir,
-            "video_list.m3u8",
-            "video_",
-            &output_path,
-            60, // duration
-            30,  // segment time
-            None
-        );
-
-        let concat_path = stitch_dir.join("video__concat.txt");
-        if concat_path.exists() {
-            let content = fs::read_to_string(concat_path).unwrap();
-            println!("Concat content:\n{}", content);
-            // We expect video_002 and video_000 (wrapped)
-            assert!(content.contains("video_002.mkv"));
-            // Note: In the new logic, it might NOT find 000 if timestamps are identical or not set correctly in this dummy test.
-            // But for now let's just check if it runs.
-        } else {
-            // It might have returned early if no segments found
-            panic!("Concat file not created");
-        }
+        let segments = find_segments_by_time(&temp_dir, "video_", start, end).unwrap();
+        
+        assert_eq!(segments.len(), 2);
+        assert!(segments[0].to_string_lossy().contains("20240101100000"));
+        assert!(segments[1].to_string_lossy().contains("20240101100002"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

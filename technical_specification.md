@@ -12,34 +12,34 @@ The system follows a **Distributed Peer-to-Cloud** model coordinated by a lightw
 
 ### **2.1 High-Level Architecture**
 
-*   **Client:** Tauri v2 (Rust + React) acting as a "Black Box" flight recorder.
-*   **Signaling:** PartyKit (Serverless WebSockets) for room management, time synchronization, and upload coordination.
-*   **Storage:** Cloudflare R2 (S3-compatible) for ephemeral video storage.
-*   **Video Engine:** FFmpeg (Sidecar Process) handling hardware-accelerated capture and ring-buffering.
+- **Client:** Tauri v2 (Rust + React) acting as a "Black Box" flight recorder.
+- **Signaling:** PartyKit (Serverless WebSockets) for room management, time synchronization, and upload coordination.
+- **Storage:** Cloudflare R2 (S3-compatible) for ephemeral video storage.
+- **Video Engine:** FFmpeg (Sidecar Process) handling hardware-accelerated capture and ring-buffering.
 
 ### **2.2 Technology Stack**
 
-| Component | Technology | Reasoning |
-| :---- | :---- | :---- |
-| **App Framework** | **Tauri v2** | Native performance, tiny bundle size, secure access to OS binaries. |
-| **Frontend** | **React + Tailwind** | Rapid UI development, responsive overlay capabilities. |
-| **Backend Logic** | **Rust** | Handles file I/O, process management, and FFmpeg coordination. |
-| **Video Core** | **FFmpeg (Binary)** | Robust hardware encoding (NVENC/AMF/QSV) and segment muxing. |
-| **Signaling** | **PartyKit** | Low-latency WebSockets, stateful serverless for lobby management. |
-| **Storage** | **Cloudflare R2** | Zero egress fees; compatible with S3 SDKs. |
+| Component         | Technology           | Reasoning                                                           |
+| :---------------- | :------------------- | :------------------------------------------------------------------ |
+| **App Framework** | **Tauri v2**         | Native performance, tiny bundle size, secure access to OS binaries. |
+| **Frontend**      | **React + Tailwind** | Rapid UI development, responsive overlay capabilities.              |
+| **Backend Logic** | **Rust**             | Handles file I/O, process management, and FFmpeg coordination.      |
+| **Video Core**    | **FFmpeg (Binary)**  | Robust hardware encoding (NVENC/AMF/QSV) and segment muxing.        |
+| **Signaling**     | **PartyKit**         | Low-latency WebSockets, stateful serverless for lobby management.   |
+| **Storage**       | **Cloudflare R2**    | Zero egress fees; compatible with S3 SDKs.                          |
 
 | **Storage** | **Cloudflare R2** | Zero egress fees; compatible with S3 SDKs. |
 
 ### **2.3 Tauri v2 Specifics**
 
-*   **Plugins:** Core features are now plugins. We will use:
-    *   `@tauri-apps/plugin-shell` (FFmpeg spawning)
-    *   `@tauri-apps/plugin-fs` (File management)
-    *   `@tauri-apps/plugin-http` (Uploads)
-    *   `@tauri-apps/plugin-dialog` (File pickers)
-*   **Permissions:** Managed via **Capabilities** in `src-tauri/capabilities/`.
-    *   `core:shell:allow-execute` for FFmpeg.
-    *   `core:fs:allow-read-write` for temp/buffer directories.
+- **Plugins:** Core features are now plugins. We will use:
+  - `@tauri-apps/plugin-shell` (FFmpeg spawning)
+  - `@tauri-apps/plugin-fs` (File management)
+  - `@tauri-apps/plugin-http` (Uploads)
+  - `@tauri-apps/plugin-dialog` (File pickers)
+- **Permissions:** Managed via **Capabilities** in `src-tauri/capabilities/`.
+  - `core:shell:allow-execute` for FFmpeg.
+  - `core:fs:allow-read-write` for temp/buffer directories.
 
 ---
 
@@ -47,48 +47,48 @@ The system follows a **Distributed Peer-to-Cloud** model coordinated by a lightw
 
 ### **3.1 In Scope (Must Have)**
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| **Rolling Buffer** | 60-second disk-backed ring buffer via FFmpeg | P0 |
-| **Manual Clip Trigger** | Hotkey + UI button to save clip | P0 |
-| **Squad Rooms** | Join/create rooms via PartyKit | P0 |
-| **Synchronized Clipping** | One trigger saves all POVs | P0 |
-| **Time Sync** | NTP-style multi-sample sync (±30ms) | P0 |
-| **Cloud Upload** | Presigned URL upload to R2 | P0 |
-| **Multi-POV Playback** | 4-player grid view, synced playback | P0 |
-| **24hr Auto-Delete** | R2 lifecycle policy | P0 |
-| **Windows Support** | Windows 10/11, 64-bit | P0 |
-| **Hardware Encoding** | NVENC/AMF/QSV detection | P0 |
+| Feature                   | Description                                  | Priority |
+| ------------------------- | -------------------------------------------- | -------- |
+| **Rolling Buffer**        | 60-second disk-backed ring buffer via FFmpeg | P0       |
+| **Manual Clip Trigger**   | Hotkey + UI button to save clip              | P0       |
+| **Squad Rooms**           | Join/create rooms via PartyKit               | P0       |
+| **Synchronized Clipping** | One trigger saves all POVs                   | P0       |
+| **Time Sync**             | NTP-style multi-sample sync (±30ms)          | P0       |
+| **Cloud Upload**          | Presigned URL upload to R2                   | P0       |
+| **Multi-POV Playback**    | 4-player grid view, synced playback          | P0       |
+| **24hr Auto-Delete**      | R2 lifecycle policy                          | P0       |
+| **Windows Support**       | Windows 10/11, 64-bit                        | P0       |
+| **Hardware Encoding**     | NVENC/AMF/QSV detection                      | P0       |
 
 ### **3.2 Post-MVP (V2)**
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Auto-clip plugins | Game event detection | P1 |
-| Custom storage | Self-hosted S3-compatible | P1 |
-| Extended buffer | 2-5 minute options | P1 |
-| Clip length selection | 30s/60s/2m/5m at clip time | P1 |
-| Upload progress | Progress bar + retry logic | P1 |
+| Feature               | Description                | Priority |
+| --------------------- | -------------------------- | -------- |
+| Auto-clip plugins     | Game event detection       | P1       |
+| Custom storage        | Self-hosted S3-compatible  | P1       |
+| Extended buffer       | 2-5 minute options         | P1       |
+| Clip length selection | 30s/60s/2m/5m at clip time | P1       |
+| Upload progress       | Progress bar + retry logic | P1       |
 
 ### **3.3 Future (V3+)**
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Custom signaling server | Docker image for self-hosters | P2 |
-| macOS/Linux support | Cross-platform capture | P2 |
-| LiveKit streaming | Optional live spectate | P2 |
-| ML auto-detection | Highlight detection | P3 |
-| Mobile companion | View clips on phone | P3 |
+| Feature                 | Description                   | Priority |
+| ----------------------- | ----------------------------- | -------- |
+| Custom signaling server | Docker image for self-hosters | P2       |
+| macOS/Linux support     | Cross-platform capture        | P2       |
+| LiveKit streaming       | Optional live spectate        | P2       |
+| ML auto-detection       | Highlight detection           | P3       |
+| Mobile companion        | View clips on phone           | P3       |
 
 ### **3.4 Explicitly Out of Scope**
 
-| Feature | Reason |
-|---------|--------|
-| Full VOD recording | Cost killer (SquadOV lesson) |
-| Permanent storage | Scope creep, cost |
+| Feature            | Reason                        |
+| ------------------ | ----------------------------- |
+| Full VOD recording | Cost killer (SquadOV lesson)  |
+| Permanent storage  | Scope creep, cost             |
 | Game stats overlay | Requires per-game maintenance |
-| Social features | Focus on core utility first |
-| Code signing | Cost prohibitive for indie |
+| Social features    | Focus on core utility first   |
+| Code signing       | Cost prohibitive for indie    |
 
 ---
 
@@ -156,13 +156,13 @@ squadsync/
 
 ### **4.2 Why This Structure?**
 
-| Decision | Reasoning |
-|----------|-----------|
-| **Monorepo** | Shared types, atomic changes, single CI |
-| **pnpm workspaces** | Fast, disk-efficient, strict |
-| **Turborepo** | Cached builds, parallel tasks |
-| **Separate `packages/`** | Reusable logic, testable in isolation |
-| **Plugins outside core** | Optional, community-contributed |
+| Decision                 | Reasoning                               |
+| ------------------------ | --------------------------------------- |
+| **Monorepo**             | Shared types, atomic changes, single CI |
+| **pnpm workspaces**      | Fast, disk-efficient, strict            |
+| **Turborepo**            | Cached builds, parallel tasks           |
+| **Separate `packages/`** | Reusable logic, testable in isolation   |
+| **Plugins outside core** | Optional, community-contributed         |
 
 ---
 
@@ -272,6 +272,7 @@ packages/shared/
 The Rust backend spawns FFmpeg as a sidecar process.
 
 **FFmpeg Command for Rolling Buffer:**
+
 ```bash
 ffmpeg \
   -f gdigrab -framerate 60 -i desktop  # Capture (Windows)
@@ -306,28 +307,28 @@ ffmpeg \
 // ============ Client → Server ============
 
 interface JoinRoomMessage {
-  type: "JOIN_ROOM";
+  type: 'JOIN_ROOM';
   roomId: string;
   userId: string;
   displayName: string;
 }
 
 interface LeaveRoomMessage {
-  type: "LEAVE_ROOM";
+  type: 'LEAVE_ROOM';
 }
 
 interface TimeSyncRequestMessage {
-  type: "TIME_SYNC_REQUEST";
+  type: 'TIME_SYNC_REQUEST';
   clientTime: number;
 }
 
 interface TriggerClipMessage {
-  type: "TRIGGER_CLIP";
-  segmentCount: number;  // Default 60
+  type: 'TRIGGER_CLIP';
+  segmentCount: number; // Default 60
 }
 
 interface UploadCompleteMessage {
-  type: "UPLOAD_COMPLETE";
+  type: 'UPLOAD_COMPLETE';
   clipId: string;
   key: string;
 }
@@ -335,45 +336,45 @@ interface UploadCompleteMessage {
 // ============ Server → Client ============
 
 interface RoomStateMessage {
-  type: "ROOM_STATE";
+  type: 'ROOM_STATE';
   members: RoomMember[];
   serverTime: number;
 }
 
 interface MemberJoinedMessage {
-  type: "MEMBER_JOINED";
+  type: 'MEMBER_JOINED';
   member: RoomMember;
 }
 
 interface MemberLeftMessage {
-  type: "MEMBER_LEFT";
+  type: 'MEMBER_LEFT';
   userId: string;
 }
 
 interface TimeSyncResponseMessage {
-  type: "TIME_SYNC_RESPONSE";
-  clientTime: number;      // Echo back
-  serverReceive: number;   // When server got request
-  serverSend: number;      // When server sent response
+  type: 'TIME_SYNC_RESPONSE';
+  clientTime: number; // Echo back
+  serverReceive: number; // When server got request
+  serverSend: number; // When server sent response
 }
 
 interface StartClipMessage {
-  type: "START_CLIP";
+  type: 'START_CLIP';
   clipId: string;
   segmentCount: number;
   referenceTime: number;
-  uploadUrl: string;       // Presigned PUT URL
+  uploadUrl: string; // Presigned PUT URL
 }
 
 interface ClipReadyMessage {
-  type: "CLIP_READY";
+  type: 'CLIP_READY';
   clipId: string;
   userId: string;
-  url: string;             // Public URL for playback
+  url: string; // Public URL for playback
 }
 
 interface AllClipsReadyMessage {
-  type: "ALL_CLIPS_READY";
+  type: 'ALL_CLIPS_READY';
   clipId: string;
   clips: {
     userId: string;
@@ -383,7 +384,7 @@ interface AllClipsReadyMessage {
 }
 
 interface ErrorMessage {
-  type: "ERROR";
+  type: 'ERROR';
   code: string;
   message: string;
 }
@@ -435,27 +436,27 @@ provider = "default" # default, custom
 
 ### **8.1 TypeScript (Frontend + Signaling)**
 
-*   **Explicit Types:** Avoid `any`. Define interfaces for all data structures.
-*   **Validation:** Use `Zod` for runtime validation of config and network payloads.
-*   **Async/Await:** Prefer over `.then()`.
-*   **Result Pattern:** Use `{ ok: true, value: T } | { ok: false, error: E }` for operations that can fail (like uploads).
+- **Explicit Types:** Avoid `any`. Define interfaces for all data structures.
+- **Validation:** Use `Zod` for runtime validation of config and network payloads.
+- **Async/Await:** Prefer over `.then()`.
+- **Result Pattern:** Use `{ ok: true, value: T } | { ok: false, error: E }` for operations that can fail (like uploads).
 
 ### **8.2 Rust (Backend)**
 
-*   **Error Handling:** Use `thiserror` for library errors and `anyhow` for application errors.
-*   **Type Aliases:** Use `ClipResult<T>` for clarity.
-*   **Builder Pattern:** Use for complex configurations (e.g., `FfmpegCommand`).
-*   **Tauri Commands:** Return `Result<T, CommandError>` to handle errors gracefully in the frontend.
+- **Error Handling:** Use `thiserror` for library errors and `anyhow` for application errors.
+- **Type Aliases:** Use `ClipResult<T>` for clarity.
+- **Builder Pattern:** Use for complex configurations (e.g., `FfmpegCommand`).
+- **Tauri Commands:** Return `Result<T, CommandError>` to handle errors gracefully in the frontend.
 
 > [!TIP]
 > See `developer_guide.md` for concrete code examples of these patterns, including the Builder pattern for FFmpeg and the Result pattern for async operations.
 
 ### **8.3 React Components**
 
-*   **Structure:** One component per file.
-*   **Props:** Interface defined above the component.
-*   **Hooks:** Custom hooks for logic (e.g., `useTimeSync`, `useRecorder`).
-*   **State:** Use Zustand for global stores (Room, Recording, Settings).
+- **Structure:** One component per file.
+- **Props:** Interface defined above the component.
+- **Hooks:** Custom hooks for logic (e.g., `useTimeSync`, `useRecorder`).
+- **State:** Use Zustand for global stores (Room, Recording, Settings).
 
 ---
 
@@ -463,19 +464,19 @@ provider = "default" # default, custom
 
 ### **9.1 Error Categories**
 
-*   **Connection:** `CONNECTION_FAILED`, `ROOM_NOT_FOUND`.
-*   **Recording:** `FFMPEG_NOT_FOUND`, `ENCODER_NOT_AVAILABLE`, `DISK_FULL`.
-*   **Clip/Upload:** `UPLOAD_FAILED`, `RATE_LIMITED`.
+- **Connection:** `CONNECTION_FAILED`, `ROOM_NOT_FOUND`.
+- **Recording:** `FFMPEG_NOT_FOUND`, `ENCODER_NOT_AVAILABLE`, `DISK_FULL`.
+- **Clip/Upload:** `UPLOAD_FAILED`, `RATE_LIMITED`.
 
 ### **9.2 Testing Strategy**
 
-| Type | Tool | What to Test |
-|------|------|--------------|
-| **Unit (TS)** | Vitest | Hooks, utils, validation |
-| **Unit (Rust)** | cargo test | FFmpeg commands, buffer logic |
-| **Component** | React Testing Library | UI interactions |
-| **Integration** | Vitest | WebSocket message flows |
-| **E2E** | Playwright (future) | Full clip flow |
+| Type            | Tool                  | What to Test                  |
+| --------------- | --------------------- | ----------------------------- |
+| **Unit (TS)**   | Vitest                | Hooks, utils, validation      |
+| **Unit (Rust)** | cargo test            | FFmpeg commands, buffer logic |
+| **Component**   | React Testing Library | UI interactions               |
+| **Integration** | Vitest                | WebSocket message flows       |
+| **E2E**         | Playwright (future)   | Full clip flow                |
 
 ---
 
@@ -484,5 +485,5 @@ provider = "default" # default, custom
 1.  **Client:** MSI/EXE installer built via `tauri build`.
 2.  **Server:** PartyKit deployed to Cloudflare Workers (Edge).
 3.  **Storage:** Cloudflare R2 bucket.
-    *   **CORS:** Allow PUT from `tauri://localhost`.
-    *   **Lifecycle:** Delete objects older than 1 day.
+    - **CORS:** Allow PUT from `tauri://localhost`.
+    - **Lifecycle:** Delete objects older than 1 day.

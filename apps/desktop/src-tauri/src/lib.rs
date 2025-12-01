@@ -8,6 +8,7 @@ pub mod config;
 pub mod audio;
 pub mod error;
 pub mod constants;
+pub mod ntp;
 
 use state::RecordingState;
 
@@ -18,7 +19,13 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_http::init())
-    .plugin(tauri_plugin_log::Builder::default().build())
+    .plugin(tauri_plugin_log::Builder::default()
+        .targets([
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: Some("squad_sync".to_string()) }),
+            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+        ])
+        .build())
     .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
             if shortcut.matches(tauri_plugin_global_shortcut::Modifiers::ALT, tauri_plugin_global_shortcut::Code::F10) {
@@ -57,6 +64,9 @@ pub fn run() {
       let state = app.state::<RecordingState>();
       *state.config.lock().unwrap() = config.clone();
 
+      // Start NTP Sync
+      state.ntp_manager.start();
+
       // Cleanup Temp Buffer on Startup
       let temp_path_str = config.recording.temp_path.replace("%TEMP%", &std::env::temp_dir().to_string_lossy());
       let buffer_dir = std::path::PathBuf::from(temp_path_str);
@@ -86,6 +96,8 @@ pub fn run() {
       if let Err(e) = app.handle().global_shortcut().register("Alt+F10") {
           log::error!("Failed to register global shortcut: {}", e);
       }
+
+
 
       Ok(())
     })

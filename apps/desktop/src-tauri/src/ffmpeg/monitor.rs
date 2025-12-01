@@ -18,7 +18,7 @@ impl FfmpegMonitor {
                         // Check if this is a progress line
                         // Video has "frame=", Audio usually has "size=" but no "frame="
                         // Both have "time=" and "bitrate="
-                        let is_progress = line_string.contains("time=") && line_string.contains("bitrate=");
+                        let is_progress = line_string.contains("time=");
 
                         if is_progress {
                             // Parse and format the progress line
@@ -120,14 +120,14 @@ mod tests {
     fn test_is_progress_check() {
         // Video line
         let video_line = "frame= 123 fps= 60.0 size= 1024kB time=00:00:10.00 bitrate= 2000.0kbits/s speed= 1.0x";
-        assert!(video_line.contains("time=") && video_line.contains("bitrate="));
+        assert!(video_line.contains("time="));
 
         // Audio line (no frame)
         let audio_line = "size= 512kB time=00:00:30.00 bitrate= 128.0kbits/s speed= 1.0x";
-        assert!(audio_line.contains("time=") && audio_line.contains("bitrate="));
+        assert!(audio_line.contains("time="));
 
         // Random line
         let random_line = "Input #0, matroska,webm, from 'input.mkv':";
-        assert!(!(random_line.contains("time=") && random_line.contains("bitrate=")));
+        assert!(!random_line.contains("time="));
     }
 }

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "name": "squad-sync-signaling",
+  "main": "src/server.ts",
+  "compatibilityDate": "2024-05-01"
+}

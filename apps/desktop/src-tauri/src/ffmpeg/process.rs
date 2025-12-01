@@ -18,7 +18,7 @@ use crate::constants::{
     DEFAULT_WIDTH, DEFAULT_HEIGHT
 };
 
-pub async fn start_recording_process(app: &AppHandle) -> Result<Sender<RecordingMessage>, String> {
+pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<RecordingMessage>, std::thread::JoinHandle<()>), String> {
     let _app_cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     let state = app.state::<RecordingState>();
     let config = state.config.lock().map_err(|e| e.to_string())?.clone(); 
@@ -50,7 +50,7 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<Sender<Recording
 
     // 2. Select Encoder
     let encoder = if config.recording.encoder == "auto" {
-        encoder::get_best_encoder()
+        encoder::get_best_encoder(app)
     } else {
         match config.recording.encoder.as_str() {
             "h264_nvenc" => VideoEncoder::Nvenc,
@@ -146,7 +146,7 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<Sender<Recording
         system_audio_enabled,
         system_sample_rate,
         system_audio_device,
-        config.recording.audio_codec,
+        Some("pcm_s16le".to_string()),
         config.recording.audio_bitrate,
         bitrate,
         buffer_dir,

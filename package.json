@@ -10,7 +10,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "typecheck": "turbo typecheck",
     "ci": "turbo run build lint typecheck",
-    "desktop": "pnpm --filter desktop tauri dev"
+    "desktop": "pnpm --filter desktop tauri dev",
+    "build:desktop": "pnpm --filter desktop tauri build"
   },
   "keywords": [],
   "author": "",
@@ -22,9 +23,12 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.39.1",
     "prettier": "^3.7.2",
+    "tsx": "^4.21.0",
     "turbo": "^2.6.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "ws": "^8.18.3"
   }
 }

@@ -37,21 +37,7 @@ export function Settings({ onShowToast }: SettingsProps) {
         invoke<MonitorInfo[]>('get_monitors'),
       ]);
 
-      if (loadedConfig && loadedConfig.recording) {
-        const res = loadedConfig.recording.resolution || 'native';
-        const fps = loadedConfig.recording.framerate || 60;
-        let targetBitrate = '15M';
-
-        if (res === 'native') {
-          targetBitrate = fps === 60 ? '30M' : '15M';
-        } else if (res === '1920x1080') {
-          targetBitrate = fps === 60 ? '20M' : '10M';
-        } else if (res === '1280x720') {
-          targetBitrate = fps === 60 ? '12M' : '6M';
-        }
-
-        loadedConfig.recording.bitrate = targetBitrate;
-      }
+      // Bitrate is handled by backend now
 
       setConfig(loadedConfig);
       setAudioDevices(devices);
@@ -97,22 +83,9 @@ export function Settings({ onShowToast }: SettingsProps) {
       },
     };
 
-    if (key === 'resolution' || key === 'framerate') {
-      const res = key === 'resolution' ? value : config.recording.resolution;
-      const fps = key === 'framerate' ? value : config.recording.framerate;
-
-      let bitrate = '15M';
-
-      if (res === 'native') {
-        bitrate = fps === 60 ? '30M' : '15M';
-      } else if (res === '1920x1080') {
-        bitrate = fps === 60 ? '20M' : '10M';
-      } else if (res === '1280x720') {
-        bitrate = fps === 60 ? '12M' : '6M';
-      }
-
-      newConfig.recording.bitrate = bitrate;
-    }
+    // Note: Bitrate is now calculated dynamically by the backend based on resolution/fps
+    // unless explicitly set in advanced settings (which this UI doesn't touch yet).
+    // So we don't need to manually set it here.
 
     setConfig(newConfig);
   }

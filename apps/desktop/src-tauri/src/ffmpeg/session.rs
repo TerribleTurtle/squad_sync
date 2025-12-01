@@ -10,8 +10,11 @@ use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::Duration;
 use tauri::AppHandle;
-use tauri_plugin_shell::ShellExt;
+// use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandEvent;
+use tokio::sync::mpsc::Receiver;
 use std::os::windows::process::CommandExt;
+use std::path::PathBuf;
 use log::{info, error, warn};
 
 use crate::ffmpeg::commands::FfmpegCommandBuilder;
@@ -40,11 +43,12 @@ impl RecordingSession {
         buffer_dir: std::path::PathBuf,
         retention_seconds: u32,
         audio_backend: String,
-    ) -> Result<Sender<RecordingMessage>, String> {
+
+    ) -> Result<(Sender<RecordingMessage>, std::thread::JoinHandle<()>), String> {
         let (tx, rx) = mpsc::channel::<RecordingMessage>();
         let app_clone = app.clone();
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             // 1. Audio Capture Setup (Microphone)
             let (mic_stream, mic_sample_rate, mic_channels, final_audio_source) = if let Some(source) = &audio_source {
                 if audio_backend == "dshow" {
@@ -86,19 +90,34 @@ impl RecordingSession {
                 .with_audio_output_config(audio_codec, audio_bitrate, crate::constants::DEFAULT_AUDIO_SAMPLE_RATE, crate::constants::DEFAULT_AUDIO_CHANNELS)
                 .with_audio_backend(audio_backend.clone());
 
+            // Check for Hardware Scaling Support
+            use crate::ffmpeg::commands::HardwareScalingMode;
+            
+            let has_d3d11_scale = crate::ffmpeg::utils::check_filter_support(&app_clone, "scale_d3d11");
+            
+            let scaling_mode = if has_d3d11_scale {
+                info!("Using D3D11 Hardware Scaling");
+                HardwareScalingMode::D3D11
+            } else {
+                warn!("D3D11 Scaling not supported. CUDA interop (hwmap) is unstable. Falling back to Software Scaling (hwdownload).");
+                HardwareScalingMode::None
+            };
+            
+            let base_builder = base_builder.with_scaling_mode(scaling_mode);
+
             // 4. Prepare Commands (Video & Audio)
             use crate::ffmpeg::commands::CommandMode;
             
-            let video_pattern = buffer_dir.join("video_%03d.mkv").to_string_lossy().to_string();
-            let audio_pattern = buffer_dir.join("audio_%03d.mkv").to_string_lossy().to_string();
+            let video_pattern = buffer_dir.join("video_%Y%m%d%H%M%S.mkv").to_string_lossy().to_string();
+            let audio_pattern = buffer_dir.join("audio_%Y%m%d%H%M%S.mkv").to_string_lossy().to_string();
 
             // Video Command
             let video_builder = base_builder.clone()
                 .with_mode(CommandMode::VideoOnly)
                 .with_output_path(video_pattern)
                 .with_segment_config(
-                    base_builder.get_segment_time().unwrap_or(4), 
-                    base_builder.get_segment_wrap().unwrap_or(100), 
+                    base_builder.get_segment_time().unwrap_or(2), 
+                    base_builder.get_segment_wrap().unwrap_or(0), // Wrap 0 means no wrap (infinite/time-based)
                     buffer_dir.join("video_list.m3u8").to_string_lossy().to_string()
                 );
 
@@ -109,8 +128,8 @@ impl RecordingSession {
                 .with_mode(CommandMode::AudioOnly)
                 .with_output_path(audio_pattern)
                 .with_segment_config(
-                    base_builder.get_segment_time().unwrap_or(4), 
-                    base_builder.get_segment_wrap().unwrap_or(100), 
+                    base_builder.get_segment_time().unwrap_or(2), 
+                    base_builder.get_segment_wrap().unwrap_or(0), 
                     buffer_dir.join("audio_list.m3u8").to_string_lossy().to_string()
                 );
 
@@ -120,35 +139,76 @@ impl RecordingSession {
             info!("Spawning Audio Process with args: {:?}", audio_args);
 
             // 5. Spawn Processes (Video First)
-            let video_sidecar = match app_clone.shell().sidecar("ffmpeg") {
-                Ok(cmd) => cmd,
-                Err(e) => { error!("Failed to create video sidecar: {}", e); return; }
+            let ffmpeg_path = match crate::ffmpeg::utils::get_sidecar_path(&app_clone, "ffmpeg") {
+                Ok(p) => p,
+                Err(e) => { error!("Failed to resolve FFmpeg path: {}", e); return; }
             };
-            
+
+            info!("Using FFmpeg at: {:?}", ffmpeg_path);
+
+            // Helper to spawn and bridge output
+            fn spawn_process(cmd: &PathBuf, args: Vec<String>) -> Result<(Receiver<CommandEvent>, std::process::Child), String> {
+                let mut child = std::process::Command::new(cmd)
+                    .args(args)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .stdin(std::process::Stdio::piped()) // Needed for 'q'
+                    .spawn()
+                    .map_err(|e| e.to_string())?;
+
+                let (tx, rx) = tokio::sync::mpsc::channel(100);
+                
+                let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
+                let stderr = child.stderr.take().ok_or("Failed to open stderr")?;
+
+                // Stdout Reader
+                let tx_out = tx.clone();
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines() {
+                        if let Ok(l) = line {
+                            let _ = tx_out.blocking_send(CommandEvent::Stdout(l.into_bytes()));
+                        }
+                    }
+                });
+
+                // Stderr Reader
+                let tx_err = tx;
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stderr);
+                    for line in reader.lines() {
+                        if let Ok(l) = line {
+                            let _ = tx_err.blocking_send(CommandEvent::Stderr(l.into_bytes()));
+                        }
+                    }
+                });
+
+                Ok((rx, child))
+            }
+
             let video_start_time = std::time::SystemTime::now();
-            let (video_rx, mut video_child) = match video_sidecar.args(video_args).spawn() {
+            let (video_rx, mut video_child) = match spawn_process(&ffmpeg_path, video_args) {
                 Ok(res) => res,
                 Err(e) => { error!("Failed to spawn Video FFmpeg: {}", e); return; }
             };
 
-            let audio_sidecar = match app_clone.shell().sidecar("ffmpeg") {
-                Ok(cmd) => cmd,
-                Err(e) => { error!("Failed to create audio sidecar: {}", e); return; }
-            };
-
             let audio_start_time = std::time::SystemTime::now();
-            let (audio_rx, audio_child) = match audio_sidecar.args(audio_args).spawn() {
+            let (audio_rx, audio_child) = match spawn_process(&ffmpeg_path, audio_args) {
                 Ok(res) => res,
                 Err(e) => { 
                     error!("Failed to spawn Audio FFmpeg: {}", e); 
                     // Kill video if audio fails
-                    let _ = video_child.write(b"q");
+                    let _ = video_child.kill();
                     return; 
                 }
             };
 
-            let video_pid = video_child.pid();
-            let audio_pid = audio_child.pid();
+            let video_pid = video_child.id();
+            let audio_pid = audio_child.id();
+
+
             
             // 5b. Write Metadata for Sync
             let metadata_path = buffer_dir.join("metadata.json");
@@ -228,8 +288,13 @@ impl RecordingSession {
             let t1 = thread::spawn(move || {
                 if let Ok(mut child) = v_ptr.lock() {
                     info!("Sending 'q' to Video FFmpeg...");
-                    if let Err(e) = child.write(b"q") {
-                        warn!("Failed to send 'q' to Video: {}", e);
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        use std::io::Write;
+                        if let Err(e) = stdin.write_all(b"q") {
+                             warn!("Failed to write 'q' to Video stdin: {}", e);
+                        }
+                    } else {
+                        warn!("Video stdin not available");
                     }
                 }
             });
@@ -237,8 +302,13 @@ impl RecordingSession {
             let t2 = thread::spawn(move || {
                 if let Ok(mut child) = a_ptr.lock() {
                     info!("Sending 'q' to Audio FFmpeg...");
-                    if let Err(e) = child.write(b"q") {
-                        warn!("Failed to send 'q' to Audio: {}", e);
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        use std::io::Write;
+                        if let Err(e) = stdin.write_all(b"q") {
+                             warn!("Failed to write 'q' to Audio stdin: {}", e);
+                        }
+                    } else {
+                        warn!("Audio stdin not available");
                     }
                 }
             });
@@ -267,6 +337,8 @@ impl RecordingSession {
             info!("Recording Manager Thread Exiting");
         });
 
-        Ok(tx)
+
+
+        Ok((tx, handle))
     }
 }

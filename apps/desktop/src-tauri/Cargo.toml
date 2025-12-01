@@ -24,10 +24,12 @@ regex = "1"
 cpal = "0.15"
 thiserror = "1"
 tokio = { version = "1", features = ["sync", "net", "io-util", "rt-multi-thread", "time"] }
+rsntp = "4.0"
 dirs = "6.0.0"
 bytemuck = "1.14"
 log = "0.4"
 tauri-plugin-log = "2.0.0"
+which = "8.0.0"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem

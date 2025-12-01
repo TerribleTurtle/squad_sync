@@ -8,7 +8,7 @@ use crate::constants::{
     FFMPEG_THREAD_QUEUE_SIZE, FFMPEG_AUDIO_THREAD_QUEUE_SIZE, FFMPEG_EXTRA_HW_FRAMES, FFMPEG_MAX_MUXING_QUEUE_SIZE,
     DEFAULT_VIDEO_CODEC, DEFAULT_VIDEO_BITRATE, DEFAULT_VIDEO_FRAMERATE,
     DEFAULT_AUDIO_SAMPLE_RATE, DEFAULT_AUDIO_CHANNELS,
-    AUDIO_BUFFER_SIZE_MS, RTBUFSIZE, PRESET_P1, PRESET_SPEED, PRESET_VERYFAST, PRESET_ULTRAFAST,
+    AUDIO_BUFFER_SIZE_MS, RTBUFSIZE, PRESET_P4, PRESET_BALANCED, PRESET_VERYFAST, PRESET_ULTRAFAST,
     TUNE_ZEROLATENCY, PROFILE_HIGH,
     SEGMENT_LIST_SIZE, SEGMENT_LIST_TYPE, SEGMENT_FORMAT_MKV,
     OUTPUT_FORMAT_SEGMENT, OUTPUT_FORMAT_MP4, OUTPUT_FORMAT_LAVFI, OUTPUT_FORMAT_DSHOW, OUTPUT_FORMAT_F32LE,
@@ -48,6 +48,14 @@ pub struct FfmpegCommandBuilder {
     segment_wrap: Option<u32>,
     segment_list: Option<String>,
     mode: CommandMode,
+    scaling_mode: HardwareScalingMode,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HardwareScalingMode {
+    None,
+    D3D11,
+    CUDA,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,7 +95,13 @@ impl FfmpegCommandBuilder {
             segment_wrap: None,
             segment_list: None,
             mode: CommandMode::Combined,
+            scaling_mode: HardwareScalingMode::None,
         }
+    }
+
+    pub fn with_scaling_mode(mut self, mode: HardwareScalingMode) -> Self {
+        self.scaling_mode = mode;
+        self
     }
 
     pub fn with_mode(mut self, mode: CommandMode) -> Self {
@@ -264,22 +278,31 @@ impl FfmpegCommandBuilder {
             if let Some(res) = &self.resolution {
                 let parts: Vec<&str> = res.split('x').collect();
                 if parts.len() == 2 {
-                    video_filters.push_str(&format!("scale_d3d11={}:{}:format=nv12", parts[0], parts[1]));
-                } else {
-                    video_filters.push_str("scale_d3d11=format=nv12");
+                    match self.scaling_mode {
+                        HardwareScalingMode::D3D11 => {
+                            video_filters.push_str(&format!("scale_d3d11=width={}:height={}:format=nv12", parts[0], parts[1]));
+                        },
+                        HardwareScalingMode::CUDA => {
+                            // D3D11 (Input) -> Map to CUDA -> Scale CUDA -> NVENC (Native CUDA)
+                            // Note: hwmap=derive_device=cuda might be needed if not auto-handled.
+                            // Usually: hwmap=derive_device=cuda,scale_cuda=...
+                            video_filters.push_str("hwmap=derive_device=cuda,");
+                            video_filters.push_str(&format!("scale_cuda=w={}:h={}:format=nv12", parts[0], parts[1]));
+                        },
+                        HardwareScalingMode::None => {
+                            // Fallback to software scale
+                            // Just "hwdownload" lets FFmpeg pick the best format.
+                            // "scale" will handle the conversion if needed.
+                            video_filters.push_str("hwdownload,");
+                            video_filters.push_str(&format!("scale={}:{}", parts[0], parts[1]));
+                        }
+                    }
                 }
-            } else {
-                video_filters.push_str("scale_d3d11=format=nv12");
             }
-        } else {
-            video_filters.push_str("scale_d3d11=format=nv12");
         }
 
-        // FPS Filter
-        if !video_filters.is_empty() {
-            video_filters.push_str(",");
-        }
-        video_filters.push_str(&format!("fps={}", self.framerate));
+        // REMOVED: fps filter (incompatible with d3d11 hardware frames in some contexts)
+        // We will use -r in encoding options instead.
 
         if !video_filters.is_empty() {
             args.push("-vf".to_string());
@@ -395,78 +418,16 @@ impl FfmpegCommandBuilder {
 
     // --- SHARED / LEGACY ---
     fn build_inputs(&self) -> Vec<String> {
-        // ... (Legacy Combined Logic) ...
-        // For now, we can just call the specific ones if we wanted, but let's keep the old logic for safety or refactor it later.
-        // Actually, to avoid duplication, let's just leave the old implementation as is for 'Combined' mode
-        // but we need to be careful about indices.
-        // The old implementation hardcoded indices 0, 1, 2.
-        // Let's just copy the old implementation here for now to satisfy the trait, 
-        // but in reality we should deprecate Combined mode.
+        // Legacy Combined Logic - Preserved for backward compatibility
+        // but refactored to use helper methods to avoid duplication.
         
         let mut args = Vec::new();
-
-        // Input 0: Video (ddagrab)
-        args.push("-f".to_string());
-        args.push(OUTPUT_FORMAT_LAVFI.to_string());
-        args.push("-thread_queue_size".to_string());
-        args.push(FFMPEG_THREAD_QUEUE_SIZE.to_string());
         
-        let mut filter_opts = format!("ddagrab=output_idx={}", self.monitor_index);
-        if let Some(size) = &self.video_size {
-            filter_opts.push_str(&format!(":video_size={}", size));
-        }
-        
-        // EXTRA HW FRAMES (Prevents GPU Stalls)
-        args.push("-extra_hw_frames".to_string());
-        args.push(FFMPEG_EXTRA_HW_FRAMES.to_string());
+        // Video Input
+        args.extend(self.build_video_inputs());
 
-        // Wallclock Timestamps
-        args.push("-use_wallclock_as_timestamps".to_string());
-        args.push("1".to_string());
-
-        args.push("-i".to_string());
-        args.push(filter_opts);
-
-        // Input 1: Microphone
-        if let Some(mic_source) = &self.audio_source {
-            if self.audio_backend == "dshow" {
-                 // DSHOW INPUT (Native FFmpeg)
-                 args.extend(vec![
-                     "-f".to_string(), OUTPUT_FORMAT_DSHOW.to_string(),
-                    "-audio_buffer_size".to_string(), AUDIO_BUFFER_SIZE_MS.to_string(),
-                    "-thread_queue_size".to_string(), FFMPEG_AUDIO_THREAD_QUEUE_SIZE.to_string(),
-                    "-rtbufsize".to_string(), RTBUFSIZE.to_string(),
-                    "-use_wallclock_as_timestamps".to_string(), "1".to_string(),
-                    "-i".to_string(), format!("audio={}", mic_source),
-                 ]);
-            } else {
-                // CPAL INPUT (Named Pipe)
-                if let Some(mic_rate) = &self.mic_sample_rate {
-                    let mic_ch = self.mic_channels.unwrap_or(DEFAULT_MIC_CHANNELS).to_string();
-                    args.extend(vec![
-                        "-f".to_string(), OUTPUT_FORMAT_F32LE.to_string(),
-                        "-thread_queue_size".to_string(), FFMPEG_AUDIO_THREAD_QUEUE_SIZE.to_string(),
-                        "-ar".to_string(), mic_rate.to_string(),
-                        "-ac".to_string(), mic_ch,
-                        "-use_wallclock_as_timestamps".to_string(), "1".to_string(),
-                        "-i".to_string(), MIC_AUDIO_PIPE_NAME.to_string(),
-                    ]);
-                }
-            }
-        }
-
-        // Input 2: System Audio (Named Pipe)
-        if self.system_audio {
-            let sys_ch = self.system_channels.unwrap_or(DEFAULT_AUDIO_CHANNELS).to_string();
-            args.extend(vec![
-                "-f".to_string(), OUTPUT_FORMAT_F32LE.to_string(),
-                "-thread_queue_size".to_string(), FFMPEG_AUDIO_THREAD_QUEUE_SIZE.to_string(),
-                "-ar".to_string(), self.system_sample_rate.to_string(),
-                "-ac".to_string(), sys_ch,
-                "-use_wallclock_as_timestamps".to_string(), "1".to_string(),
-                "-i".to_string(), SYSTEM_AUDIO_PIPE_NAME.to_string(),
-            ]);
-        }
+        // Audio Inputs
+        args.extend(self.build_audio_inputs());
 
         args
     }
@@ -486,22 +447,25 @@ impl FfmpegCommandBuilder {
             if let Some(res) = &self.resolution {
                 let parts: Vec<&str> = res.split('x').collect();
                 if parts.len() == 2 {
-                    video_filters.push_str(&format!("scale_d3d11={}:{}:format=nv12", parts[0], parts[1]));
-                } else {
-                    video_filters.push_str("scale_d3d11=format=nv12");
+                    match self.scaling_mode {
+                        HardwareScalingMode::D3D11 => {
+                             video_filters.push_str(&format!("scale_d3d11=width={}:height={}:format=nv12", parts[0], parts[1]));
+                        },
+                        HardwareScalingMode::CUDA => {
+                             video_filters.push_str("hwmap=derive_device=cuda,");
+                             video_filters.push_str(&format!("scale_cuda=w={}:h={}:format=nv12", parts[0], parts[1]));
+                        },
+                        HardwareScalingMode::None => {
+                             video_filters.push_str("hwdownload,");
+                             video_filters.push_str(&format!("scale={}:{}", parts[0], parts[1]));
+                        }
+                    }
                 }
-            } else {
-                video_filters.push_str("scale_d3d11=format=nv12");
             }
-        } else {
-            video_filters.push_str("scale_d3d11=format=nv12");
         }
 
-        // FPS Filter
-        if !video_filters.is_empty() {
-            video_filters.push_str(",");
-        }
-        video_filters.push_str(&format!("fps={}", self.framerate));
+        // REMOVED: fps filter
+        // video_filters.push_str(&format!("fps={}", self.framerate));
 
         let has_mic = self.audio_source.is_some();
         let has_sys = self.system_audio;
@@ -563,7 +527,7 @@ impl FfmpegCommandBuilder {
                 "-b:v".to_string(), self.bitrate.clone(),
                 "-maxrate".to_string(), format!("{}k", kbps * BITRATE_MAX_MULTIPLIER / BITRATE_MAX_DIVISOR),
                 "-bufsize".to_string(), format!("{}k", kbps * BITRATE_BUF_MULTIPLIER),
-                "-preset".to_string(), self.preset.clone().unwrap_or(PRESET_P1.to_string()),
+                "-preset".to_string(), self.preset.clone().unwrap_or(PRESET_P4.to_string()),
                 "-profile:v".to_string(), self.profile.clone().unwrap_or(PROFILE_HIGH.to_string()),
             ]);
             if let Some(tune) = &self.tune {
@@ -574,7 +538,7 @@ impl FfmpegCommandBuilder {
                 "-rc".to_string(), "cbr".to_string(),
                 "-b:v".to_string(), self.bitrate.clone(),
                 "-usage".to_string(), "transcoding".to_string(),
-                "-quality".to_string(), self.preset.clone().unwrap_or(PRESET_SPEED.to_string()),
+                "-quality".to_string(), self.preset.clone().unwrap_or(PRESET_BALANCED.to_string()),
                 "-profile:v".to_string(), self.profile.clone().unwrap_or(PROFILE_HIGH.to_string()),
             ]);
         } else if self.video_codec.contains("qsv") {
@@ -593,8 +557,10 @@ impl FfmpegCommandBuilder {
         }
 
         // --- FRAMERATE ---
+        // Use -r for output framerate (replaces fps filter)
         args.extend(vec![
-            "-fps_mode".to_string(), "vfr".to_string(),
+            "-r".to_string(), self.framerate.to_string(),
+            "-fps_mode".to_string(), "cfr".to_string(), // Enforce constant frame rate
         ]);
 
         // --- GOP / KEYFRAMES ---
@@ -646,12 +612,10 @@ impl FfmpegCommandBuilder {
                 "-segment_time".to_string(), time.to_string(),
                 "-segment_list_size".to_string(), SEGMENT_LIST_SIZE.to_string(),
                 "-segment_list".to_string(), list.clone(),
-                "-segment_list_type".to_string(), SEGMENT_LIST_SIZE.to_string(), // Wait, SEGMENT_LIST_TYPE was "m3u8" or similar. The original code used SEGMENT_LIST_TYPE constant.
-                // The original code was: "-segment_list_type".to_string(), SEGMENT_LIST_TYPE.to_string(),
-                // I should keep it.
                 "-segment_list_type".to_string(), SEGMENT_LIST_TYPE.to_string(),
                 "-segment_list_flags".to_string(), "+live".to_string(), // Update playlist immediately
                 "-segment_format".to_string(), SEGMENT_FORMAT_MKV.to_string(),
+                "-strftime".to_string(), "1".to_string(), // Enable strftime expansion
                 "-reset_timestamps".to_string(), "1".to_string(),
                 self.output_path.clone(),
             ]);

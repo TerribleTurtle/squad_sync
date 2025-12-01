@@ -14,9 +14,9 @@ pub const AUDIO_SILENCE_TIMEOUT_MS: u64 = 20;
 
 // Video Defaults
 pub const DEFAULT_VIDEO_CODEC: &str = "libx264";
-pub const DEFAULT_VIDEO_BITRATE: &str = "6M";
+pub const DEFAULT_VIDEO_BITRATE: &str = "15M";
 pub const DEFAULT_VIDEO_FRAMERATE: u32 = 60;
-pub const DEFAULT_VIDEO_PRESET: &str = "ultrafast";
+pub const DEFAULT_VIDEO_PRESET: &str = "faster";
 pub const DEFAULT_VIDEO_TUNE: &str = "zerolatency"; // For CPU encoding
 pub const DEFAULT_VIDEO_PROFILE: &str = "high";
 
@@ -32,7 +32,9 @@ pub const RTBUFSIZE: &str = "100M";
 
 // Presets & Tunes
 pub const PRESET_P1: &str = "p1";
+pub const PRESET_P4: &str = "p4";
 pub const PRESET_SPEED: &str = "speed";
+pub const PRESET_BALANCED: &str = "balanced";
 pub const PRESET_VERYFAST: &str = "veryfast";
 pub const PRESET_ULTRAFAST: &str = "ultrafast";
 pub const TUNE_ULL: &str = "ull";
@@ -64,3 +66,13 @@ pub const GOP_MULTIPLIER: u32 = 1;
 // Defaults
 pub const DEFAULT_WIDTH: u32 = 1920;
 pub const DEFAULT_HEIGHT: u32 = 1080;
+
+// Replay Logic
+pub const REPLAY_WAIT_RETRIES: u32 = 15;
+pub const REPLAY_WAIT_DELAY_MS: u64 = 1000;
+pub const REPLAY_AUDIO_SYNC_RETRIES: u32 = 5;
+pub const REPLAY_AUDIO_SYNC_THRESHOLD_SEC: f64 = 0.5;
+pub const REPLAY_SEGMENT_AGE_THRESHOLD_SEC: u64 = 5;
+pub const REPLAY_COPY_RETRIES: u32 = 20;
+pub const REPLAY_COPY_DELAY_MS: u64 = 50;
+pub const REPLAY_FLUSH_WAIT_MS: u64 = 500;

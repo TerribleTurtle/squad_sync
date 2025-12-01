@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Settings } from './components/Settings';
 import { Tooltip } from './components/ui/Tooltip';
+import { RoomManager } from './components/room/RoomManager';
 import { Settings2, Circle, Disc, Square, CheckCircle2, X, Info } from 'lucide-react';
 
 function App() {
@@ -227,6 +228,11 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Room Manager Overlay */}
+      <div className="fixed bottom-4 right-4 z-40">
+        <RoomManager />
+      </div>
     </>
   );
 }

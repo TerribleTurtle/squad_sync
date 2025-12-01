@@ -1,6 +1,8 @@
 # SquadSync Project Phases
 
-## **Phase 0: Initialization & Documentation**
+## ✅ Completed Milestones
+
+### **Phase 0: Initialization & Documentation**
 
 **Goal:** Define project scope and initial scaffolding.
 
@@ -10,7 +12,7 @@
 - [x] Create `phases.md`
 - [x] Initialize basic monorepo config (`pnpm-workspace.yaml`, `turbo.json`, `package.json`)
 
-## **Phase 1: Project Skeleton & Monorepo Setup**
+### **Phase 1: Project Skeleton & Monorepo Setup**
 
 **Goal:** Initialize the repository structure and shared tooling.
 
@@ -22,7 +24,7 @@
 - [x] Setup IDE (`.editorconfig`, `.vscode/`)
 - [x] Setup Basic CI (Lint, Build, Typecheck) - _Manual Trigger Only_
 
-## **Phase 2: Core Video Tech (Proof of Concept)**
+### **Phase 2: Core Video Tech (Proof of Concept)**
 
 **Goal:** Prove the "Silent Recorder" architecture works (FFmpeg + Rust + Disk).
 **Priority:** CRITICAL
@@ -42,44 +44,63 @@
 - [x] **Dynamic Bitrate & Smart Resolution**
 - [x] **Global Hotkey** (Alt+F10)
 
-## **Phase 3: MVP Robustness & Polish**
+### **Phase 3: MVP Robustness & Polish**
 
 **Goal:** Ensure the app is stable, safe, and performant enough for public release.
 **Priority:** HIGH
 
-- [ ] **Disk Space Watchdog** (Auto-disable if low disk space)
-- [ ] **Structured Error Handling** (AppError enum, User-friendly messages)
-- [ ] **Process Priority Management** (Prevent game lag)
+- [ ] **Disk Space Watchdog** (Auto-disable if low disk space) - _Deferred_
+- [ ] **Structured Error Handling** (AppError enum, User-friendly messages) - _Deferred_
+- [x] **Process Priority Management** (Prevent game lag)
 - [x] **Verify Audio Sync** (Long duration test)
 - [x] **Migrate to MKV/PCM** (Intermediate Recording Format)
 - [x] **Decoupled Audio/Video Pipeline**
 
-## **Phase 4: Shared Infrastructure**
+### **Phase 4: Frame-Perfect Sync & Replay Architecture**
 
-**Goal:** Set up the data types and contracts for the full app.
+**Goal:** Achieve frame-perfect synchronization of clips across multiple users by using an authoritative time source (NTP) and absolute time-based file naming.
 
-- [ ] `packages/shared`: Types, Zod Schemas, Constants
-- [x] `packages/ffmpeg-commands`: Command builders (Implemented internally in `src-tauri/src/ffmpeg`)
-- [ ] Setup Test Infrastructure (Vitest & Cargo)
+- [x] **NTP Synchronization**
+  - [x] Implement `rsntp` client with periodic sync (15m interval)
+  - [x] Implement local fallback (Offset=0) for offline mode
+  - [x] Store authoritative `NtpOffset` in app state
+- [x] **Time-Based Capture Architecture**
+  - [x] Update FFmpeg to use `%Y%m%d%H%M%S` file naming
+  - [x] Ensure `use_wallclock_as_timestamps` is active
+  - [x] Switch to 2s segments for granular control
+- [x] **Frame-Perfect Replay Logic**
+  - [x] Implement `find_segments_by_time` (NTP -> Local Time conversion)
+  - [x] Implement `probe_start_time` (ffprobe) for sub-second precision
+  - [x] Implement precise trimming (`TriggerTime - Duration - ActualStart`)
+- [x] **Verification**
+  - [x] Verify NTP offset accuracy
+  - [x] Verify clip start precision (Stopwatch test)
 
-## **Phase 4: Signaling & Synchronization**
+---
 
-**Goal:** Enable multi-user connectivity.
+## 🚧 Active Development
 
-- [ ] Initialize `apps/signaling` (PartyKit)
-- [ ] Implement Room Logic (Join/Leave)
-- [ ] Implement NTP Time Sync
-- [ ] Implement Signaling Error Handling
+### **Phase 5: Signaling & Connectivity**
 
-## **Phase 5: Desktop Frontend & Integration**
+**Goal:** Enable multi-user connectivity via PartyKit and connect the frontend.
 
-**Goal:** Connect the UI to the backend and signaling server.
+- [x] **Infrastructure**
+  - [x] Initialize `apps/signaling` (PartyKit)
+  - [x] Define shared types in `packages/shared`
+  - [x] Setup Test Infrastructure (Vitest & Cargo)
+- [ ] **Implementation**
+  - [ ] Implement Room Logic (Join/Leave) in PartyKit
+  - [ ] Implement Client WebSocket Hook (`useRoom`)
+  - [ ] Implement Signaling Error Handling
+- [ ] **Verification**
+  - [ ] Verify Room Connection (Multi-Client)
+  - [ ] Verify Error States (Disconnect/Reconnect)
 
-- [ ] React UI (Overlay, Grid)
-- [ ] Connect `useRecorder` hook to Rust backend
-- [ ] Connect `useRoom` hook to PartyKit
+---
 
-## **Phase 6: Cloud Upload & Playback**
+## 📅 Upcoming Milestones
+
+### **Phase 6: Cloud Upload & Playback**
 
 **Goal:** Complete the loop.
 
@@ -87,7 +108,7 @@
 - [ ] Implement R2 Upload (Presigned URLs)
 - [ ] Implement Playback Grid with Sync Logic
 
-## **Future Roadmap (Post-MVP)**
+## 🔮 Future Roadmap (Post-MVP)
 
 **Goal:** Optimizations and architectural improvements for scale.
 

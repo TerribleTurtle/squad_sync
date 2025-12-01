@@ -21,8 +21,10 @@ impl VideoEncoder {
     }
 }
 
-pub fn get_best_encoder() -> VideoEncoder {
-    let available = get_available_encoders();
+use tauri::AppHandle;
+
+pub fn get_best_encoder(app: &AppHandle) -> VideoEncoder {
+    let available = get_available_encoders(app);
     
     // Priority list
     if available.contains(&VideoEncoder::Nvenc) {
@@ -42,22 +44,14 @@ pub fn get_best_encoder() -> VideoEncoder {
     VideoEncoder::X264
 }
 
-fn get_available_encoders() -> Vec<VideoEncoder> {
+fn get_available_encoders(app: &AppHandle) -> Vec<VideoEncoder> {
     let mut encoders = Vec::new();
     
     // We try to run "ffmpeg -encoders" and parse the output.
-    // Note: In a real Tauri app, we might need to use the sidecar here too if ffmpeg isn't in PATH.
-    // However, for detection, we might want to try the sidecar first.
-    // Since we are in the backend, we can try to execute the sidecar or just 'ffmpeg' if it's in path.
-    // For now, let's assume we can run 'ffmpeg' or we fail back to software.
-    // A more robust way would be to pass the AppHandle to this function to use the sidecar, 
-    // but that complicates the signature. Let's try a simple Command first.
+    let ffmpeg_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffmpeg")
+        .unwrap_or_else(|_| std::path::PathBuf::from("ffmpeg")); // Fallback to PATH if sidecar fails (unlikely)
     
-    // TODO: This relies on ffmpeg being in the PATH or accessible. 
-    // If we strictly use sidecar, we might need to refactor this to be async or take AppHandle.
-    // For this POC, we will try to run `ffmpeg` directly.
-    
-    let output = match Command::new("ffmpeg")
+    let output = match Command::new(ffmpeg_path)
         .arg("-hide_banner")
         .arg("-encoders")
         .output() 

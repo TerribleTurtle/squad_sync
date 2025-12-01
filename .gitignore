@@ -52,3 +52,21 @@ apps/desktop/src-tauri/bin/
 !apps/desktop/src-tauri/bin/.gitkeep
 apps/desktop/src-tauri/ffmpeg.exe
 apps/desktop/src-tauri/ffmpeg-*.exe
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Node
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
