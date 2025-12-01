@@ -68,6 +68,21 @@ async function main() {
   const config = DOWNLOADS[platform];
   const zipPath = path.join(dest, config.filename);
 
+  // Move and Rename
+  let allBinariesExist = true;
+  for (const bin of config.binaries) {
+    const destPath = path.join(dest, bin.dest);
+    if (!fs.existsSync(destPath)) {
+      allBinariesExist = false;
+      break;
+    }
+  }
+
+  if (allBinariesExist) {
+    console.log('FFmpeg binaries already exist. Skipping download.');
+    return;
+  }
+
   console.log(`Downloading Full FFmpeg build from ${config.url}...`);
   try {
     await downloadFile(config.url, zipPath);
@@ -77,7 +92,6 @@ async function main() {
     execSync(config.extractCmd, { cwd: dest, stdio: 'inherit' });
     console.log('Extraction complete.');
 
-    // Move and Rename
     for (const bin of config.binaries) {
       const srcPath = path.join(dest, bin.src);
       const destPath = path.join(dest, bin.dest);

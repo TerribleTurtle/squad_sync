@@ -63,7 +63,7 @@ pub async fn disable_replay(app: AppHandle) -> Result<(), String> {
 
     if let Some(handle) = handle_to_join {
         log::info!("Waiting for recording thread to finish cleanup...");
-        if let Err(_) = handle.join() {
+        if handle.join().is_err() {
             log::error!("Failed to join recording thread");
         }
         log::info!("Recording thread joined successfully");

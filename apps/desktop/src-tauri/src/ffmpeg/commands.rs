@@ -237,13 +237,12 @@ impl FfmpegCommandBuilder {
 
     // --- VIDEO ONLY HELPERS ---
     fn build_video_inputs(&self) -> Vec<String> {
-        let mut args = Vec::new();
-        
-        // Input 0: Video (ddagrab)
-        args.push("-f".to_string());
-        args.push(OUTPUT_FORMAT_LAVFI.to_string());
-        args.push("-thread_queue_size".to_string());
-        args.push(FFMPEG_THREAD_QUEUE_SIZE.to_string());
+        let mut args = vec![
+            "-f".to_string(),
+            OUTPUT_FORMAT_LAVFI.to_string(),
+            "-thread_queue_size".to_string(),
+            FFMPEG_THREAD_QUEUE_SIZE.to_string(),
+        ];
         
         let mut filter_opts = format!("ddagrab=output_idx={}", self.monitor_index);
         if let Some(size) = &self.video_size {
@@ -334,18 +333,16 @@ impl FfmpegCommandBuilder {
                     "-use_wallclock_as_timestamps".to_string(), "1".to_string(),
                     "-i".to_string(), format!("audio={}", mic_source),
                  ]);
-            } else {
-                if let Some(mic_rate) = &self.mic_sample_rate {
-                    let mic_ch = self.mic_channels.unwrap_or(DEFAULT_MIC_CHANNELS).to_string();
-                    args.extend(vec![
-                        "-f".to_string(), OUTPUT_FORMAT_F32LE.to_string(),
-                        "-thread_queue_size".to_string(), FFMPEG_AUDIO_THREAD_QUEUE_SIZE.to_string(),
-                        "-ar".to_string(), mic_rate.to_string(),
-                        "-ac".to_string(), mic_ch,
-                        "-use_wallclock_as_timestamps".to_string(), "1".to_string(),
-                        "-i".to_string(), MIC_AUDIO_PIPE_NAME.to_string(),
-                    ]);
-                }
+            } else if let Some(mic_rate) = &self.mic_sample_rate {
+                let mic_ch = self.mic_channels.unwrap_or(DEFAULT_MIC_CHANNELS).to_string();
+                args.extend(vec![
+                    "-f".to_string(), OUTPUT_FORMAT_F32LE.to_string(),
+                    "-thread_queue_size".to_string(), FFMPEG_AUDIO_THREAD_QUEUE_SIZE.to_string(),
+                    "-ar".to_string(), mic_rate.to_string(),
+                    "-ac".to_string(), mic_ch,
+                    "-use_wallclock_as_timestamps".to_string(), "1".to_string(),
+                    "-i".to_string(), MIC_AUDIO_PIPE_NAME.to_string(),
+                ]);
             }
         }
 
@@ -767,29 +764,20 @@ mod tests {
             .with_resolution(Some("Native".to_string()));
         let args = builder.build();
         
-        let filter_complex = args.iter().position(|r| r == "-filter_complex");
-        // Native resolution usually means NO scale filter if no other filters are present, 
-        // BUT our logic currently ALWAYS adds scale_d3d11=format=nv12 for consistency if not native,
-        // let's check the logic in build_filter_chain:
-        // if !use_native_res { ... } else { video_filters.push_str("scale_d3d11=format=nv12"); }
-        // So it ALWAYS adds it.
-        
-        if let Some(idx) = filter_complex {
-             let chain = &args[idx + 1];
-             assert!(chain.contains("scale_d3d11=format=nv12"));
-             assert!(!chain.contains("scale_d3d11=1920:1080"));
-        }
+        // Native resolution should NOT add any scaling filters
+        let has_vf = args.contains(&"-vf".to_string());
+        let has_fc = args.contains(&"-filter_complex".to_string());
+        assert!(!has_vf && !has_fc, "Native resolution should not add filters");
 
         // Case 2: Invalid resolution string
         let builder2 = FfmpegCommandBuilder::new("output.mp4".to_string())
             .with_resolution(Some("invalid".to_string()));
         let args2 = builder2.build();
         
-        // Without audio, it uses -vf instead of -filter_complex
-        let vf_idx = args2.iter().position(|r| r == "-vf").unwrap();
-        let chain2 = &args2[vf_idx + 1];
-        // Should fallback to just format=nv12
-        assert!(chain2.contains("scale_d3d11=format=nv12"));
+        // Invalid resolution should fallback to Native (no filters), not panic
+        let has_vf2 = args2.contains(&"-vf".to_string());
+        let has_fc2 = args2.contains(&"-filter_complex".to_string());
+        assert!(!has_vf2 && !has_fc2, "Invalid resolution should fallback to no filters");
     }
 
     #[test]

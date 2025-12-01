@@ -19,7 +19,6 @@ use crate::constants::{
 };
 
 pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<RecordingMessage>, std::thread::JoinHandle<()>), String> {
-    let _app_cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     let state = app.state::<RecordingState>();
     let config = state.config.lock().map_err(|e| e.to_string())?.clone(); 
 
@@ -32,6 +31,7 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<Recordin
     }
     std::fs::create_dir_all(&buffer_dir).map_err(|e| e.to_string())?;
 
+    // Note: output_pattern is overridden by session.rs for separate video/audio files
     let output_pattern = buffer_dir.join("clip_%03d.mkv").to_string_lossy().to_string();
     let playlist_path = buffer_dir.join("buffer.m3u8").to_string_lossy().to_string();
 
@@ -40,8 +40,9 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<Recordin
     let wrap_limit = (buffer_duration / segment_time) + 1;
 
     println!("Buffer Dir: {:?}", buffer_dir);
-    let video_pattern = buffer_dir.join("video_%03d.mkv").to_string_lossy().to_string();
-    let audio_pattern = buffer_dir.join("audio_%03d.mkv").to_string_lossy().to_string();
+    // Patterns must match what session.rs uses (strftime format)
+    let video_pattern = buffer_dir.join("video_%Y%m%d%H%M%S.mkv").to_string_lossy().to_string();
+    let audio_pattern = buffer_dir.join("audio_%Y%m%d%H%M%S.mkv").to_string_lossy().to_string();
 
     println!("Buffer Dir: {:?}", buffer_dir);
     println!("Video Pattern: {}", video_pattern);
@@ -139,18 +140,25 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<Recordin
         .with_segment_config(segment_time, wrap_limit, playlist_path);
 
     // 7. Spawn Session
-    RecordingSession::spawn(
-        app.clone(),
-        builder,
-        config.recording.audio_source,
+    // 7. Spawn Session
+    use crate::ffmpeg::session::RecordingSessionConfig;
+    
+    let session_config = RecordingSessionConfig {
+        audio_source: config.recording.audio_source,
         system_audio_enabled,
         system_sample_rate,
         system_audio_device,
-        Some("pcm_s16le".to_string()),
-        config.recording.audio_bitrate,
-        bitrate,
+        audio_codec: Some("pcm_s16le".to_string()),
+        audio_bitrate: config.recording.audio_bitrate,
+        video_bitrate: bitrate,
         buffer_dir,
-        config.recording.buffer_retention_seconds,
-        config.recording.audio_backend,
+        retention_seconds: config.recording.buffer_retention_seconds,
+        audio_backend: config.recording.audio_backend,
+    };
+
+    RecordingSession::spawn(
+        app.clone(),
+        builder,
+        session_config,
     )
 }

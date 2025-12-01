@@ -1,6 +1,8 @@
 //! Utility functions for FFmpeg operations.
 use std::path::PathBuf;
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Manager};
 
 /// Resolves the path to a sidecar executable (ffmpeg/ffprobe).
@@ -116,7 +118,11 @@ pub fn get_file_duration(app: &AppHandle, path: &PathBuf) -> Result<f64, String>
     let ffprobe_path = get_sidecar_path(app, "ffprobe")
         .map_err(|e| format!("FFprobe not found: {}", e))?;
 
-    let output = Command::new(ffprobe_path)
+    let mut cmd = Command::new(ffprobe_path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let output = cmd
         .arg("-v").arg("error")
         .arg("-show_entries").arg("format=duration")
         .arg("-of").arg("default=noprint_wrappers=1:nokey=1")
@@ -140,7 +146,11 @@ pub fn check_filter_support(app: &AppHandle, filter_name: &str) -> bool {
     if let Ok(ffmpeg_path) = get_sidecar_path(app, "ffmpeg") {
         // Run `ffmpeg -filters`
         // Output format: " ... scale_d3d11      V->V       Resize video using Direct3D 11."
-        if let Ok(output) = Command::new(ffmpeg_path)
+        let mut cmd = Command::new(ffmpeg_path);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+
+        if let Ok(output) = cmd
             .arg("-filters")
             .output() 
         {

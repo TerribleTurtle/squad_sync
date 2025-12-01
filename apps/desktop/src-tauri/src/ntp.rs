@@ -9,6 +9,12 @@ pub struct NtpManager {
     offset_ms: Arc<AtomicI64>,
 }
 
+impl Default for NtpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NtpManager {
     pub fn new() -> Self {
         Self {

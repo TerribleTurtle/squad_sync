@@ -1,14 +1,53 @@
 import React from 'react';
 import { RoomState, RoomMember } from '@squadsync/shared';
-import { Users, LogOut } from 'lucide-react';
+import { Users, LogOut, WifiOff, AlertCircle, Loader2 } from 'lucide-react';
+import { ConnectionState } from '../../hooks/useRoom';
 
 interface SquadListProps {
   roomState: RoomState;
   currentUserId: string;
+  connectionState: ConnectionState;
+  error: string | null;
   onLeave: () => void;
+  onTriggerClip: () => void;
 }
 
-export const SquadList: React.FC<SquadListProps> = ({ roomState, currentUserId, onLeave }) => {
+export const SquadList: React.FC<SquadListProps> = ({
+  roomState,
+  currentUserId,
+  connectionState,
+  error,
+  onLeave,
+  onTriggerClip,
+}) => {
+  const getConnectionStatus = () => {
+    switch (connectionState) {
+      case 'connecting':
+        return (
+          <div className="flex items-center gap-2 text-yellow-400 text-sm bg-yellow-400/10 px-3 py-1.5 rounded-lg border border-yellow-400/20 mb-4">
+            <Loader2 size={16} className="animate-spin" />
+            <span>Connecting to squad...</span>
+          </div>
+        );
+      case 'disconnected':
+        return (
+          <div className="flex items-center gap-2 text-slate-400 text-sm bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-700 mb-4">
+            <WifiOff size={16} />
+            <span>Disconnected</span>
+          </div>
+        );
+      case 'error':
+        return (
+          <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 px-3 py-1.5 rounded-lg border border-red-400/20 mb-4">
+            <AlertCircle size={16} />
+            <span>{error || 'Connection error'}</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="w-full max-w-sm mx-auto p-6 bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl">
       <div className="flex items-center justify-between mb-6">
@@ -28,7 +67,9 @@ export const SquadList: React.FC<SquadListProps> = ({ roomState, currentUserId, 
         </button>
       </div>
 
-      <div className="space-y-3">
+      {getConnectionStatus()}
+
+      <div className="space-y-3 mb-6">
         {roomState.members.map((member: RoomMember) => (
           <div
             key={member.userId}
@@ -62,6 +103,13 @@ export const SquadList: React.FC<SquadListProps> = ({ roomState, currentUserId, 
           </div>
         ))}
       </div>
+
+      <button
+        onClick={onTriggerClip}
+        className="w-full py-3 rounded-xl font-bold text-sm transition-all duration-300 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 border border-indigo-400/20 active:scale-[0.98]"
+      >
+        Trigger Squad Clip
+      </button>
     </div>
   );
 };

@@ -24,6 +24,8 @@ $env:VITE_PARTYKIT_HOST="192.168.2.202:1999"; pnpm tauri build
 pnpm tauri build
 ```
 
+This command will automatically run the `setup:ffmpeg` script to download the required FFmpeg binaries if they are missing.
+
 3. Locate the installer
    The installer will be located in:
    `apps/desktop/src-tauri/target/release/bundle/nsis/squad_sync_0.1.0_x64-setup.exe`

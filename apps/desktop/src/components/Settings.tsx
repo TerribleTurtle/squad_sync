@@ -1,93 +1,27 @@
-import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { AppConfig } from '../types/config';
+import { useSettings } from '../hooks/useSettings';
+import {
+  DEFAULT_BUFFER_SECONDS,
+  DEFAULT_SEGMENT_TIME,
+  DEFAULT_RESOLUTION,
+} from '@squadsync/shared';
 import { Tooltip } from './ui/Tooltip';
 import { Save, Monitor, Mic, Speaker, Film, LayoutTemplate, Settings2, Info } from 'lucide-react';
 
-interface MonitorInfo {
-  id: number;
-  name: string;
-  width: number;
-  height: number;
-  is_primary: boolean;
-}
-
-interface SettingsProps {
-  onShowToast?: (message: string, type?: 'success' | 'error') => void;
-}
-
-export function Settings({ onShowToast }: SettingsProps) {
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [audioDevices, setAudioDevices] = useState<string[]>([]);
-  const [systemAudioDevices, setSystemAudioDevices] = useState<string[]>([]);
-  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    try {
-      const [loadedConfig, devices, systemDevices, monitorList] = await Promise.all([
-        invoke<AppConfig>('get_config'),
-        invoke<string[]>('get_audio_devices'),
-        invoke<string[]>('get_system_audio_devices'),
-        invoke<MonitorInfo[]>('get_monitors'),
-      ]);
-
-      // Bitrate is handled by backend now
-
-      setConfig(loadedConfig);
-      setAudioDevices(devices);
-      setSystemAudioDevices(systemDevices);
-      setMonitors(monitorList);
-    } catch (e) {
-      console.error('Failed to load settings:', e);
-    } finally {
-      setLoading(false);
-    }
-  }
+export function Settings() {
+  const {
+    config,
+    audioDevices,
+    systemAudioDevices,
+    monitors,
+    loading,
+    saving,
+    saveSettings,
+    updateRecordingConfig,
+  } = useSettings();
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!config) return;
-
-    setSaving(true);
-    try {
-      await invoke('update_config', { newConfig: config });
-      if (onShowToast) {
-        onShowToast('Settings saved successfully!', 'success');
-      }
-    } catch (e) {
-      console.error('Failed to save settings:', e);
-      if (onShowToast) {
-        onShowToast(`Error saving settings: ${e}`, 'error');
-      } else {
-        alert(`Error saving settings: ${e}`);
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function updateRecordingConfig(key: string, value: any) {
-    if (!config) return;
-
-    let newConfig = {
-      ...config,
-      recording: {
-        ...config.recording,
-        [key]: value,
-      },
-    };
-
-    // Note: Bitrate is now calculated dynamically by the backend based on resolution/fps
-    // unless explicitly set in advanced settings (which this UI doesn't touch yet).
-    // So we don't need to manually set it here.
-
-    setConfig(newConfig);
+    await saveSettings();
   }
 
   if (loading) return <div className="p-8 text-center text-slate-400">Loading settings...</div>;
@@ -112,7 +46,7 @@ export function Settings({ onShowToast }: SettingsProps) {
           </h3>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-slate-300 flex items-center gap-2">
+            <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
               <Mic size={16} className="text-slate-400" /> Microphone
             </label>
             <select
@@ -130,7 +64,7 @@ export function Settings({ onShowToast }: SettingsProps) {
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-slate-300 flex items-center gap-2">
+            <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
               <Speaker size={16} className="text-slate-400" /> System Audio
             </label>
             <select
@@ -157,7 +91,7 @@ export function Settings({ onShowToast }: SettingsProps) {
           </h3>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-slate-300 flex items-center gap-2">
+            <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
               <Monitor size={16} className="text-slate-400" /> Monitor
             </label>
             <select
@@ -176,11 +110,11 @@ export function Settings({ onShowToast }: SettingsProps) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-300 flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
                 <LayoutTemplate size={16} className="text-slate-400" /> Resolution
               </label>
               <select
-                value={config.recording.resolution || 'native'}
+                value={config.recording.resolution || DEFAULT_RESOLUTION}
                 onChange={(e) => updateRecordingConfig('resolution', e.target.value)}
                 className="w-full rounded-xl bg-slate-900/50 border-white/10 text-slate-200 shadow-sm focus:border-indigo-500/50 focus:ring-indigo-500/50 sm:text-sm py-3 transition-colors hover:bg-slate-900/70"
               >
@@ -191,7 +125,7 @@ export function Settings({ onShowToast }: SettingsProps) {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-300 flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
                 <Film size={16} className="text-slate-400" /> Framerate
               </label>
               <select
@@ -222,7 +156,7 @@ export function Settings({ onShowToast }: SettingsProps) {
                 </Tooltip>
               </div>
               <select
-                value={config.recording.buffer_duration || 120}
+                value={config.recording.buffer_duration || DEFAULT_BUFFER_SECONDS}
                 onChange={(e) => updateRecordingConfig('buffer_duration', parseInt(e.target.value))}
                 className="w-full rounded-xl bg-slate-900/50 border-white/10 text-slate-200 shadow-sm focus:border-indigo-500/50 focus:ring-indigo-500/50 sm:text-sm py-3 transition-colors hover:bg-slate-900/70"
               >
@@ -246,7 +180,7 @@ export function Settings({ onShowToast }: SettingsProps) {
                 </Tooltip>
               </div>
               <select
-                value={config.recording.segment_time || 30}
+                value={config.recording.segment_time || DEFAULT_SEGMENT_TIME}
                 onChange={(e) => updateRecordingConfig('segment_time', parseInt(e.target.value))}
                 className="w-full rounded-xl bg-slate-900/50 border-white/10 text-slate-200 shadow-sm focus:border-indigo-500/50 focus:ring-indigo-500/50 sm:text-sm py-3 transition-colors hover:bg-slate-900/70"
               >

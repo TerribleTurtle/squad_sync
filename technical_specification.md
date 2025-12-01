@@ -62,13 +62,16 @@ The system follows a **Distributed Peer-to-Cloud** model coordinated by a lightw
 
 ### **3.2 Post-MVP (V2)**
 
-| Feature               | Description                | Priority |
-| --------------------- | -------------------------- | -------- |
-| Auto-clip plugins     | Game event detection       | P1       |
-| Custom storage        | Self-hosted S3-compatible  | P1       |
-| Extended buffer       | 2-5 minute options         | P1       |
-| Clip length selection | 30s/60s/2m/5m at clip time | P1       |
-| Upload progress       | Progress bar + retry logic | P1       |
+| Feature               | Description                                 | Priority |
+| --------------------- | ------------------------------------------- | -------- |
+| Auto-clip plugins     | Game event detection                        | P1       |
+| Custom storage        | Self-hosted S3-compatible                   | P1       |
+| Extended buffer       | 2-5 minute options                          | P1       |
+| Clip length selection | 30s/60s/2m/5m at clip time                  | P1       |
+| Upload progress       | Progress bar + retry logic                  | P1       |
+| **Event Timeline**    | Metadata markers (Kills/Deaths) on scrubber | P1       |
+| **Squad Link**        | Shareable deep-links to rooms/clips         | P1       |
+| **Match Summary**     | Simple session history view                 | P2       |
 
 ### **3.3 Future (V3+)**
 
@@ -487,3 +490,36 @@ provider = "default" # default, custom
 3.  **Storage:** Cloudflare R2 bucket.
     - **CORS:** Allow PUT from `tauri://localhost`.
     - **Lifecycle:** Delete objects older than 1 day.
+
+---
+
+## **11. Plugin API (Draft)**
+
+### **11.1 Overview**
+
+Plugins allow external code to interact with SquadSync, primarily for "Auto-Clip" functionality.
+
+### **11.2 Directory Structure**
+
+Plugins are located in the `plugins/` directory.
+
+### **11.3 Shared Types**
+
+See `packages/shared/src/types/plugin.ts` for the latest definitions.
+
+```typescript
+export interface PluginEvent {
+  eventId: string;
+  timestamp: number;
+  game: string;
+  type: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ClipTrigger {
+  pluginId: string;
+  timestamp: number;
+  duration: number;
+  label: string;
+}
+```

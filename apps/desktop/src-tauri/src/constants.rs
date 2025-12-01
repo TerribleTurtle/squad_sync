@@ -11,6 +11,7 @@ pub const DEFAULT_AUDIO_BITRATE: &str = "192k";
 pub const DEFAULT_AUDIO_CODEC: &str = "aac";
 pub const AUDIO_LATENCY_THRESHOLD_MS: u64 = 20;
 pub const AUDIO_SILENCE_TIMEOUT_MS: u64 = 20;
+pub const BYTES_PER_SAMPLE: u32 = 4; // f32 = 4 bytes
 
 // Video Defaults
 pub const DEFAULT_VIDEO_CODEC: &str = "libx264";

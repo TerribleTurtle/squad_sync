@@ -14,6 +14,10 @@ export interface RecordingConfig {
 }
 
 export interface AppConfig {
+  user: {
+    display_name: string | null;
+    user_id: string | null;
+  };
   recording: {
     path: string;
     resolution?: string;

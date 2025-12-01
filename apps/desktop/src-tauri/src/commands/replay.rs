@@ -1,29 +1,29 @@
 use tauri::{command, AppHandle, Manager};
 use crate::state::RecordingState;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use regex::Regex;
-use serde::Deserialize;
 use chrono::{DateTime, Local, TimeZone, Duration};
+use std::sync::OnceLock;
 
-#[derive(Deserialize)]
-struct RecordingMetadata {
-    video_start_time: u64,
-    audio_start_time: u64,
-}
+static RE_VIDEO_AUDIO: OnceLock<Regex> = OnceLock::new();
+static RE_TIMESTAMP: OnceLock<Regex> = OnceLock::new();
+
+
 
 #[command]
-pub async fn save_replay(app: AppHandle) -> Result<String, String> {
-    save_replay_impl(&app).await
+pub async fn save_replay(app: AppHandle, trigger_timestamp: Option<u64>) -> Result<String, String> {
+    save_replay_impl(&app, trigger_timestamp).await
 }
 
-pub async fn save_replay_impl(app: &AppHandle) -> Result<String, String> {
+pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -> Result<String, String> {
     log::info!("Save Replay triggered (Time-Based)");
-    let start_process_time = std::time::Instant::now();
 
     // Wait for FFmpeg to flush recent packets
-    std::thread::sleep(std::time::Duration::from_millis(crate::constants::REPLAY_FLUSH_WAIT_MS));
+    tokio::time::sleep(std::time::Duration::from_millis(crate::constants::REPLAY_FLUSH_WAIT_MS)).await;
 
     let state = app.state::<RecordingState>();
     let config = state.config.lock().map_err(|e| e.to_string())?.clone();
@@ -36,7 +36,11 @@ pub async fn save_replay_impl(app: &AppHandle) -> Result<String, String> {
 
     // 2. Determine Trigger Time (NTP -> Local)
     // Get NTP time (authoritative)
-    let ntp_time_ms = state.ntp_manager.get_ntp_time_ms();
+    let (ntp_time_ms, is_remote) = match trigger_timestamp {
+        Some(ts) => (ts, true),
+        None => (state.ntp_manager.get_ntp_time_ms(), false),
+    };
+    
     let ntp_offset = state.ntp_manager.get_offset();
     
     // Convert back to Local System Time for file searching
@@ -51,7 +55,7 @@ pub async fn save_replay_impl(app: &AppHandle) -> Result<String, String> {
     let trigger_time = std::time::UNIX_EPOCH + std::time::Duration::from_millis(trigger_time_ms);
     let trigger_datetime: DateTime<Local> = trigger_time.into();
     
-    log::info!("Trigger Time: {} (NTP: {}, Offset: {})", trigger_datetime, ntp_time_ms, ntp_offset);
+    log::info!("Trigger Time: {} (NTP: {}, Offset: {}, Remote: {})", trigger_datetime, ntp_time_ms, ntp_offset, is_remote);
 
     // 3. Define Time Range
     let duration_sec = config.recording.buffer_duration as i64;
@@ -74,10 +78,10 @@ pub async fn save_replay_impl(app: &AppHandle) -> Result<String, String> {
     // If the last segment is very recent, it might still be writing.
     // We wait until a NEWER segment appears, confirming the previous one is closed.
     if let Some(last_video) = video_segments.last() {
-        wait_for_segment_completion(last_video, &buffer_dir);
+        wait_for_segment_completion(last_video, &buffer_dir).await;
     }
     if let Some(last_audio) = audio_segments.last() {
-        wait_for_segment_completion(last_audio, &buffer_dir);
+        wait_for_segment_completion(last_audio, &buffer_dir).await;
     }
 
     // 5. Setup Temp Dir
@@ -132,6 +136,8 @@ pub async fn save_replay_impl(app: &AppHandle) -> Result<String, String> {
         .map_err(|e| format!("FFmpeg not found: {}", e))?;
 
     let mut cmd = Command::new(ffmpeg_path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
     cmd.arg("-y");
 
     // Input Video
@@ -196,6 +202,9 @@ fn find_segments_by_time(
     // Regex: prefix + YYYYMMDDHHMMSS + .mkv
     // e.g. video_20251201071802.mkv
     let pattern = format!(r"^{}(\d{{14}})\.mkv$", prefix); 
+    // We can't easily use OnceLock for dynamic pattern (prefix changes), but we can optimize the common case or just handle error.
+    // Actually, prefix is usually "video_" or "audio_".
+    // Let's just use Regex::new but handle error properly (which it already does with map_err).
     let re = Regex::new(&pattern).map_err(|e| e.to_string())?;
 
     if !dir.exists() {
@@ -210,7 +219,7 @@ fn find_segments_by_time(
                 if let Some(ts_str) = caps.get(1) {
                     // Parse timestamp
                     if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
-                        if let Some(ts) = Local.from_local_datetime(&naive).single() {
+                        if let Some(ts) = Local.from_local_datetime(&naive).latest() {
                             // Check overlap
                             // Segment covers [ts, ts + 2s] roughly (actually 15s in config, but logic handles overlap)
                             // We want segments where End > Start_Req AND Start < End_Req
@@ -248,16 +257,14 @@ fn find_segments_by_time(
     Ok(segments.into_iter().map(|(p, _)| p).collect())
 }
 
-fn probe_start_time(app: &AppHandle, path: &PathBuf) -> Result<u64, String> {
+fn probe_start_time(app: &AppHandle, path: &Path) -> Result<u64, String> {
     // 1. Parse Filename for approximate Epoch (Fallback & Validation)
     let fname = path.file_name().and_then(|n| n.to_str()).ok_or("Invalid filename")?;
-    let re = Regex::new(r"(\d{14})\.mkv").map_err(|e| e.to_string())?;
+    let re = RE_TIMESTAMP.get_or_init(|| Regex::new(r"(\d{14})\.mkv").expect("Invalid Regex Pattern"));
     let filename_epoch_ms = if let Some(caps) = re.captures(fname) {
         if let Some(ts_str) = caps.get(1) {
             if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
-                if let Some(ts) = Local.from_local_datetime(&naive).single() {
-                     Some(ts.timestamp_millis() as u64)
-                } else { None }
+                Local.from_local_datetime(&naive).latest().map(|ts| ts.timestamp_millis() as u64)
             } else { None }
         } else { None }
     } else { None };
@@ -266,8 +273,12 @@ fn probe_start_time(app: &AppHandle, path: &PathBuf) -> Result<u64, String> {
     let ffprobe_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffprobe")
         .map_err(|e| format!("FFprobe not found: {}", e))?;
 
-    let output = Command::new(ffprobe_path)
-        .args(&[
+    let mut cmd = Command::new(ffprobe_path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let output = cmd
+        .args([
             "-v", "error",
             "-show_entries", "format=start_time",
             "-of", "default=noprint_wrappers=1:nokey=1",
@@ -327,7 +338,7 @@ fn probe_start_time(app: &AppHandle, path: &PathBuf) -> Result<u64, String> {
     }
 }
 
-fn stitch_segments(app: &AppHandle, segments: &[PathBuf], temp_dir: &PathBuf, output_path: &PathBuf) -> Result<(), String> {
+fn stitch_segments(app: &AppHandle, segments: &[PathBuf], temp_dir: &Path, output_path: &Path) -> Result<(), String> {
     let list_path = temp_dir.join("concat_list.txt");
     let mut content = String::new();
     
@@ -344,7 +355,11 @@ fn stitch_segments(app: &AppHandle, segments: &[PathBuf], temp_dir: &PathBuf, ou
     let ffmpeg_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffmpeg")
         .map_err(|e| format!("FFmpeg not found: {}", e))?;
 
-    let status = Command::new(ffmpeg_path)
+    let mut cmd = Command::new(ffmpeg_path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let status = cmd
         .arg("-f").arg("concat")
         .arg("-safe").arg("0")
         .arg("-i").arg(&list_path)
@@ -368,7 +383,8 @@ pub fn cleanup_buffer(buffer_dir: &PathBuf, retention_seconds: u32) -> std::io::
     let retention = Duration::seconds(retention_seconds as i64);
     
     // Regex for new pattern
-    let re = Regex::new(r"(video|audio)_(\d{14})\.mkv").unwrap();
+    // Regex for new pattern
+    let re = RE_VIDEO_AUDIO.get_or_init(|| Regex::new(r"(video|audio)_(\d{14})\.mkv").expect("Invalid Regex Pattern"));
 
     for entry in fs::read_dir(buffer_dir)? {
         let entry = entry?;
@@ -377,7 +393,7 @@ pub fn cleanup_buffer(buffer_dir: &PathBuf, retention_seconds: u32) -> std::io::
             if let Some(caps) = re.captures(fname) {
                 if let Some(ts_str) = caps.get(2) {
                     if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
-                        if let Some(ts) = Local.from_local_datetime(&naive).single() {
+                        if let Some(ts) = Local.from_local_datetime(&naive).latest() {
                              if now - ts > retention {
                                  let _ = fs::remove_file(path);
                              }
@@ -390,9 +406,10 @@ pub fn cleanup_buffer(buffer_dir: &PathBuf, retention_seconds: u32) -> std::io::
     Ok(())
 }
 
-fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBuf) {
+async fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBuf) {
     // Extract timestamp from segment
-    let re = Regex::new(r"(\d{14})\.mkv").unwrap();
+    // Extract timestamp from segment
+    let re = RE_TIMESTAMP.get_or_init(|| Regex::new(r"(\d{14})\.mkv").expect("Invalid Regex Pattern"));
     let fname = segment_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     
     let current_ts = if let Some(caps) = re.captures(fname) {
@@ -402,7 +419,14 @@ fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBuf) {
     } else { None };
 
     if let Some(current_naive) = current_ts {
-        let current_time = Local.from_local_datetime(&current_naive).single().unwrap();
+        // Use latest() to handle ambiguous times (DST overlap). Returns None for invalid times (DST gap).
+        let current_time = match Local.from_local_datetime(&current_naive).latest() {
+            Some(t) => t,
+            None => {
+                log::warn!("Skipping segment {} due to invalid local time (DST gap?)", fname);
+                return;
+            }
+        };
         
         // Wait loop
         let max_retries = 10; // 5 seconds (10 * 500ms)
@@ -416,7 +440,7 @@ fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBuf) {
                         if let Some(caps) = re.captures(name) {
                             if let Some(ts_str) = caps.get(1) {
                                 if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
-                                    if let Some(ts) = Local.from_local_datetime(&naive).single() {
+                                    if let Some(ts) = Local.from_local_datetime(&naive).latest() {
                                         if ts > current_time {
                                             newer_found = true;
                                             break;
@@ -447,7 +471,7 @@ fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBuf) {
             }
 
             log::debug!("Waiting for segment {} to finish...", fname);
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
         log::warn!("Timed out waiting for segment {} completion. Proceeding anyway.", fname);
     }
@@ -484,8 +508,8 @@ mod tests {
         let start_naive = chrono::NaiveDateTime::parse_from_str("20240101100001", "%Y%m%d%H%M%S").unwrap();
         let end_naive = chrono::NaiveDateTime::parse_from_str("20240101100003", "%Y%m%d%H%M%S").unwrap();
         
-        let start = Local.from_local_datetime(&start_naive).unwrap();
-        let end = Local.from_local_datetime(&end_naive).unwrap();
+        let start = Local.from_local_datetime(&start_naive).latest().unwrap();
+        let end = Local.from_local_datetime(&end_naive).latest().unwrap();
 
         let segments = find_segments_by_time(&temp_dir, "video_", start, end).unwrap();
         

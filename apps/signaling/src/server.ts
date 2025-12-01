@@ -3,9 +3,12 @@ import { RoomHandler } from './handlers/room';
 import { SyncHandler } from './handlers/sync';
 import { ClientMessageSchema, ClientMessage } from '@squadsync/shared';
 
+import { RateLimiter } from './lib/ratelimit';
+
 export default class Server implements Party.Server {
   private roomHandler: RoomHandler;
   private syncHandler: SyncHandler;
+  private rateLimiter: RateLimiter;
 
   // Map connection ID to User ID for disconnect handling
   private connToUser: Map<string, string> = new Map();
@@ -13,6 +16,7 @@ export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) {
     this.roomHandler = new RoomHandler(room);
     this.syncHandler = new SyncHandler();
+    this.rateLimiter = new RateLimiter();
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
@@ -31,6 +35,19 @@ export default class Server implements Party.Server {
 
       const msg = result.data as ClientMessage;
 
+      // Check Rate Limit
+      if (!this.rateLimiter.checkLimit(sender.id, msg.type as any)) {
+        console.warn(`Rate limit exceeded for ${sender.id} on ${msg.type}`);
+        sender.send(
+          JSON.stringify({
+            type: 'ERROR',
+            code: 'RATE_LIMITED',
+            message: 'You are sending too many requests. Please slow down.',
+          })
+        );
+        return;
+      }
+
       switch (msg.type) {
         case 'JOIN_ROOM':
           this.connToUser.set(sender.id, msg.userId);
@@ -47,8 +64,16 @@ export default class Server implements Party.Server {
           this.syncHandler.handleTimeSync(sender, msg);
           break;
         case 'TRIGGER_CLIP':
-          // TODO: Implement clip triggering
-          console.log('Clip triggered by', sender.id);
+          const clipId = crypto.randomUUID();
+          const startClipMsg = {
+            type: 'START_CLIP',
+            clipId,
+            segmentCount: msg.segmentCount || 60, // Default to 60s if not specified
+            referenceTime: Date.now(),
+            uploadUrl: '', // TODO: Generate presigned URL here later
+          };
+          this.room.broadcast(JSON.stringify(startClipMsg));
+          console.log(`Clip ${clipId} triggered by ${sender.id}`);
           break;
         case 'UPLOAD_COMPLETE':
           // TODO: Implement upload completion

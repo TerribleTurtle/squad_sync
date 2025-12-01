@@ -1,5 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use crate::constants::{SYSTEM_AUDIO_PIPE_NAME, MIC_AUDIO_PIPE_NAME, ERROR_NO_DATA, AUDIO_SILENCE_TIMEOUT_MS};
+use crate::constants::{SYSTEM_AUDIO_PIPE_NAME, MIC_AUDIO_PIPE_NAME, ERROR_NO_DATA, AUDIO_SILENCE_TIMEOUT_MS, BYTES_PER_SAMPLE};
 use tokio::net::windows::named_pipe::ServerOptions;
 use tokio::io::AsyncWriteExt;
 use std::sync::Arc;
@@ -144,12 +144,11 @@ fn spawn_pipe_task(pipe_name: &'static str, mut rx: tokio::sync::mpsc::Unbounded
                         // Calculate samples: (Rate * Channels * GapMS) / 1000
                         // Use u64 to prevent overflow
                         let samples_needed = (sample_rate as u64 * channels as u64 * gap.as_millis() as u64) / 1000;
-                        let bytes_needed = samples_needed * 4; // f32 = 4 bytes
+                        let bytes_needed = samples_needed * BYTES_PER_SAMPLE as u64;
                         
                         if bytes_needed > 0 {
                             let silence_buf = vec![0u8; bytes_needed as usize];
                             
-                            // log::debug!("Injecting {} bytes ({}ms) of silence into {}", bytes_needed, gap.as_millis(), pipe_name);
                             
                             if let Err(e) = server.write_all(&silence_buf).await {
                                 if e.kind() == std::io::ErrorKind::BrokenPipe || e.raw_os_error() == Some(ERROR_NO_DATA) {

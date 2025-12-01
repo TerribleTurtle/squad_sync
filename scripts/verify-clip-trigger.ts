@@ -5,10 +5,10 @@ import { WebSocket } from 'ws';
 global.WebSocket = WebSocket as any;
 
 const PARTYKIT_HOST = 'localhost:1999';
-const ROOM_ID = 'test-room-verify';
+const ROOM_ID = 'test-room-clip-trigger';
 
 async function runVerification() {
-  console.log('Starting verification...');
+  console.log('Starting Clip Trigger verification...');
 
   const clients: PartySocket[] = [];
   const clientCount = 3;
@@ -52,8 +52,7 @@ async function runVerification() {
   await connectedPromise;
   console.log('All clients connected!');
 
-  // Verify JOIN_ROOM flow
-  console.log('Sending JOIN_ROOM messages...');
+  // Join Room
   clients.forEach((client, i) => {
     client.send(
       JSON.stringify({
@@ -65,8 +64,20 @@ async function runVerification() {
     );
   });
 
+  // Wait for joins
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  // Trigger Clip from Client 0
+  console.log('Triggering clip from user-0...');
+  clients[0].send(
+    JSON.stringify({
+      type: 'TRIGGER_CLIP',
+      segmentCount: 60,
+    })
+  );
+
   // Wait for responses
-  console.log('Waiting for messages...');
+  console.log('Waiting for START_CLIP messages...');
   await new Promise((resolve) => setTimeout(resolve, 2000));
 
   console.log('Closing clients...');
@@ -78,13 +89,13 @@ async function runVerification() {
     const userId = `user-${i}`;
     const messages = receivedMessages[userId];
 
-    // Expect ROOM_STATE
-    const hasRoomState = messages.some((m) => m.type === 'ROOM_STATE');
-    if (!hasRoomState) {
-      console.error(`❌ Client ${userId} did not receive ROOM_STATE`);
+    // Expect START_CLIP
+    const startClipMsg = messages.find((m) => m.type === 'START_CLIP');
+    if (!startClipMsg) {
+      console.error(`❌ Client ${userId} did not receive START_CLIP`);
       success = false;
     } else {
-      console.log(`✅ Client ${userId} received ROOM_STATE`);
+      console.log(`✅ Client ${userId} received START_CLIP (ClipID: ${startClipMsg.clipId})`);
     }
   }
 

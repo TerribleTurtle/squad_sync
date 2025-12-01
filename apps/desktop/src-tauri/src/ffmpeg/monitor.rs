@@ -72,10 +72,8 @@ impl FfmpegMonitor {
                                 last_log_time = std::time::Instant::now();
                                 first_log = false;
                             }
-                        } else {
-                            if !line_string.trim().is_empty() {
-                                log::debug!("FFmpeg ({}): {}", label, line_string.trim());
-                            }
+                        } else if !line_string.trim().is_empty() {
+                            log::debug!("FFmpeg ({}): {}", label, line_string.trim());
                         }
                     }
                     _ => {}

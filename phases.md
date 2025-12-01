@@ -38,7 +38,7 @@
 - [x] **High Performance Capture** (ddagrab + Zero-Copy)
 - [x] **Manual Recording Mode** (MP4 Output)
 - [x] **Circular Buffer Mode** (Replay Buffer Engine) - _Fragmented MP4_
-- [ ] **Buffer Cleanup Logic** (Startup Cleanup)
+- [x] **Buffer Cleanup Logic** (Startup Cleanup)
 - [x] **Game/System Audio Capture** (via Config)
 - [x] **Screen Selector** (Multi-Monitor Support)
 - [x] **Dynamic Bitrate & Smart Resolution**
@@ -55,6 +55,14 @@
 - [x] **Verify Audio Sync** (Long duration test)
 - [x] **Migrate to MKV/PCM** (Intermediate Recording Format)
 - [x] **Decoupled Audio/Video Pipeline**
+- [ ] **Codebase Audit Fixes**
+  - [x] **Critical**: Fix time conversion panics in `replay.rs` (DST safety)
+  - [x] **Critical**: Fix blocking `std::thread::sleep` in async runtime
+  - [x] **Cleanup**: Replace unsafe `unwrap()` with proper error handling
+  - [x] **Cleanup**: Fix hardcoded audio settings in `process.rs`
+  - [x] **Cleanup**: Improve Windows path handling in `stitch_segments`
+  - [x] **Cleanup**: Remove stray test artifacts from root
+  - [x] **Cleanup**: Fix all `cargo clippy` warnings
 
 ### **Phase 4: Frame-Perfect Sync & Replay Architecture**
 
@@ -88,12 +96,13 @@
   - [x] Initialize `apps/signaling` (PartyKit)
   - [x] Define shared types in `packages/shared`
   - [x] Setup Test Infrastructure (Vitest & Cargo)
+  - [x] **Refactor**: Extract `useRecorder` and stores from `App.tsx` (Pre-req for Signaling)
 - [ ] **Implementation**
-  - [ ] Implement Room Logic (Join/Leave) in PartyKit
-  - [ ] Implement Client WebSocket Hook (`useRoom`)
+  - [x] Implement Room Logic (Join/Leave) in PartyKit
+  - [x] Implement Client WebSocket Hook (`useRoom`)
   - [ ] Implement Signaling Error Handling
 - [ ] **Verification**
-  - [ ] Verify Room Connection (Multi-Client)
+  - [x] Verify Room Connection (Multi-Client)
   - [ ] Verify Error States (Disconnect/Reconnect)
 
 ---
@@ -104,9 +113,16 @@
 
 **Goal:** Complete the loop.
 
-- [ ] Implement Clip Generation (FFmpeg concat)
-- [ ] Implement R2 Upload (Presigned URLs)
-- [ ] Implement Playback Grid with Sync Logic
+- [ ] **Remote Clip Triggering**
+  - [x] Implement `TRIGGER_CLIP` (PartyKit) & `START_CLIP` (Client)
+  - [x] Verify synchronized trigger latency
+- [ ] **Clip Generation & Upload**
+  - [ ] Implement `concat_segments` FFmpeg command
+  - [ ] Implement R2 Upload (Presigned URLs)
+- [ ] **Playback & Sync**
+  - [ ] Implement `PlaybackView` Grid (Canvas/Video)
+  - [ ] Implement Leader/Follower Seek Sync
+  - [ ] Verify frame-perfect playback synchronization
 
 ## 🔮 Future Roadmap (Post-MVP)
 
@@ -118,3 +134,10 @@
 - [ ] **Hardware Benchmarking**: Auto-detect capability.
 - [ ] **Sidecar Watchdog**: External process monitor.
 - [ ] **Integration Tests**: CI/CD pipeline for recording.
+- [ ] **Auto-Clip Plugin Support**: Game event detection hooks.
+- [ ] **Event Timeline**: Visual markers for key events on the playback scrubber.
+- [ ] **Squad Link**: Deep linking for easy sharing of rooms and clips.
+- [ ] **Match Summary**: Session history and basic stats.
+- [ ] **Security Hardening**:
+  - [ ] Implement strict Content Security Policy (CSP).
+  - [ ] Restrict `ffmpeg` execution arguments or use a sidecar wrapper.

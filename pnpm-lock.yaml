@@ -17,6 +17,9 @@ importers:
       eslint:
         specifier: ^9.39.1
         version: 9.39.1(jiti@1.21.7)
+      partysocket:
+        specifier: ^1.1.6
+        version: 1.1.6
       prettier:
         specifier: ^3.7.2
         version: 3.7.2

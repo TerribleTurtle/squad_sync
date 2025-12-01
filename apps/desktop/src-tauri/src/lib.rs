@@ -27,17 +27,16 @@ pub fn run() {
         ])
         .build())
     .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
-        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-            if shortcut.matches(tauri_plugin_global_shortcut::Modifiers::ALT, tauri_plugin_global_shortcut::Code::F10) {
+        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed
+            && shortcut.matches(tauri_plugin_global_shortcut::Modifiers::ALT, tauri_plugin_global_shortcut::Code::F10) {
                 log::info!("Global Hotkey Triggered");
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    match crate::commands::replay::save_replay_impl(&app_handle).await {
+                    match crate::commands::replay::save_replay_impl(&app_handle, None).await {
                         Ok(path) => log::info!("Replay saved via hotkey: {}", path),
                         Err(e) => log::error!("Failed to save replay via hotkey: {}", e),
                     }
                 });
-            }
         }
     }).build())
     .manage(RecordingState::new())
@@ -55,14 +54,18 @@ pub fn run() {
     .setup(|app| {
       #[cfg(debug_assertions)]
       {
-        let window = app.get_webview_window("main").unwrap();
-        window.open_devtools();
+        if let Some(window) = app.get_webview_window("main") {
+            window.open_devtools();
+        }
       }
       
       // Load config
       let config = crate::config::AppConfig::load(app.handle());
       let state = app.state::<RecordingState>();
-      *state.config.lock().unwrap() = config.clone();
+      match state.config.lock() {
+          Ok(mut c) => *c = config.clone(),
+          Err(e) => log::error!("Failed to lock config mutex: {}", e),
+      }
 
       // Start NTP Sync
       state.ntp_manager.start();
@@ -81,7 +84,7 @@ pub fn run() {
       std::thread::spawn(move || {
           const CREATE_NO_WINDOW: u32 = 0x08000000;
           let _ = std::process::Command::new("powershell")
-              .args(&[
+              .args([
                   "-NoProfile", 
                   "-Command", 
                   &format!("Get-Process -Id {} | ForEach-Object {{ $_.PriorityClass = 'High' }}", pid)

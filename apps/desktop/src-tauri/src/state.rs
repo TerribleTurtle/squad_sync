@@ -18,6 +18,12 @@ pub struct RecordingState {
     pub ntp_manager: Arc<NtpManager>,
 }
 
+impl Default for RecordingState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RecordingState {
     pub fn new() -> Self {
         Self {

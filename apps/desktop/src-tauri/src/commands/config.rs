@@ -31,7 +31,7 @@ pub async fn update_config(app: AppHandle, state: State<'_, RecordingState>, new
     // 1b. Wait for cleanup if needed
     if let Some(handle) = handle_to_join {
         log::info!("Waiting for previous recording to cleanup...");
-        if let Err(_) = handle.join() {
+        if handle.join().is_err() {
             log::error!("Failed to join previous recording thread");
         }
         log::info!("Previous recording cleaned up.");

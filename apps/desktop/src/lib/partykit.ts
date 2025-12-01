@@ -12,6 +12,19 @@ export class PartyKitClient {
       id: userId,
     });
 
+    this.socket.addEventListener('open', () => {
+      this.notifyConnectionHandlers('connect');
+    });
+
+    this.socket.addEventListener('close', () => {
+      this.notifyConnectionHandlers('disconnect');
+    });
+
+    this.socket.addEventListener('error', (err) => {
+      console.error('PartySocket error:', err);
+      this.notifyConnectionHandlers('error', err);
+    });
+
     this.socket.addEventListener('message', (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -40,8 +53,36 @@ export class PartyKitClient {
     };
   }
 
+  public onConnect(handler: () => void) {
+    this.connectionHandlers.add({ type: 'connect', handler });
+    return () => this.connectionHandlers.delete({ type: 'connect', handler });
+  }
+
+  public onDisconnect(handler: () => void) {
+    this.connectionHandlers.add({ type: 'disconnect', handler });
+    return () => this.connectionHandlers.delete({ type: 'disconnect', handler });
+  }
+
+  public onError(handler: (err: Event) => void) {
+    this.connectionHandlers.add({ type: 'error', handler });
+    return () => this.connectionHandlers.delete({ type: 'error', handler });
+  }
+
   private notifyHandlers(msg: ServerMessage) {
     this.messageHandlers.forEach((handler) => handler(msg));
+  }
+
+  private connectionHandlers: Set<{
+    type: 'connect' | 'disconnect' | 'error';
+    handler: Function;
+  }> = new Set();
+
+  private notifyConnectionHandlers(type: 'connect' | 'disconnect' | 'error', data?: any) {
+    this.connectionHandlers.forEach((h) => {
+      if (h.type === type) {
+        h.handler(data);
+      }
+    });
   }
 
   public get id(): string {

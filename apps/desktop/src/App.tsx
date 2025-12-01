@@ -1,86 +1,17 @@
-import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useState } from 'react';
 import { Settings } from './components/Settings';
 import { Tooltip } from './components/ui/Tooltip';
 import { RoomManager } from './components/room/RoomManager';
 import { Settings2, Circle, Disc, Square, CheckCircle2, X, Info } from 'lucide-react';
+import { useToastStore } from './stores/toastStore';
+import { useRecorder } from './hooks/useRecorder';
 
 function App() {
-  const [status, setStatus] = useState('Ready');
-  const [isReplayActive, setIsReplayActive] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
+  const { toast } = useToastStore();
+  const { status, isReplayActive, isBuffering, enableReplay, disableReplay, saveReplay } =
+    useRecorder();
+
   const [showSettings, setShowSettings] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Alt+F10 to save clip
-      if (e.altKey && e.key === 'F10') {
-        if (isReplayActive) {
-          saveReplay();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isReplayActive]);
-
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
-
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type });
-  };
-
-  async function enableReplay() {
-    try {
-      setIsBuffering(true);
-      setStatus('Initializing Buffer...');
-      await invoke('enable_replay');
-
-      // Simulate buffering delay for UX
-      setTimeout(() => {
-        setIsBuffering(false);
-        setIsReplayActive(true);
-        setStatus('Replay Buffer Active');
-        showToast('Replay Buffer Enabled');
-      }, 2000);
-    } catch (e) {
-      setIsBuffering(false);
-      setStatus(`Error: ${e}`);
-      showToast(`Error: ${e}`, 'error');
-    }
-  }
-
-  async function disableReplay() {
-    try {
-      await invoke('disable_replay');
-      setIsReplayActive(false);
-      setStatus('Replay Buffer Disabled');
-      showToast('Replay Buffer Disabled');
-    } catch (e) {
-      setStatus(`Error: ${e}`);
-      showToast(`Error: ${e}`, 'error');
-    }
-  }
-
-  async function saveReplay() {
-    try {
-      setStatus('Saving Clip...');
-      await invoke('save_replay');
-      setStatus(`Clip Saved!`);
-      showToast('Clip Saved Successfully!');
-      setTimeout(() => setStatus('Replay Buffer Active'), 3000);
-    } catch (e) {
-      setStatus(`Error saving: ${e}`);
-      showToast(`Error saving: ${e}`, 'error');
-    }
-  }
 
   return (
     <>
@@ -158,7 +89,7 @@ function App() {
                   <button
                     type="button"
                     className="group w-full py-9 rounded-2xl font-bold text-2xl transition-all duration-300 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-[0_0_30px_-5px_rgba(16,185,129,0.3)] border border-emerald-400/20 hover:scale-[1.02] active:scale-[0.98] hover:shadow-[0_0_40px_-5px_rgba(16,185,129,0.4)]"
-                    onClick={saveReplay}
+                    onClick={() => saveReplay()}
                   >
                     <div className="flex flex-col items-center gap-2">
                       <div className="flex items-center gap-3">
@@ -216,7 +147,7 @@ function App() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative">
-              <Settings onShowToast={showToast} />
+              <Settings />
               <button
                 onClick={() => setShowSettings(false)}
                 className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700 rounded-full transition-colors z-10"
@@ -231,7 +162,7 @@ function App() {
 
       {/* Room Manager Overlay */}
       <div className="fixed bottom-4 right-4 z-40">
-        <RoomManager />
+        <RoomManager onClipStart={saveReplay} />
       </div>
     </>
   );

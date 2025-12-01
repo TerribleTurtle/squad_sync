@@ -8,6 +8,8 @@ use cpal::traits::{DeviceTrait, HostTrait};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub recording: RecordingConfig,
+    #[serde(default)]
+    pub user: UserConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -98,8 +100,17 @@ impl Default for AppConfig {
                 buffer_retention_seconds: 300,
                 audio_backend: "cpal".to_string(),
             },
+            user: UserConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UserConfig {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 
