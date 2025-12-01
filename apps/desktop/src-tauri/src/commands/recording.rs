@@ -4,7 +4,7 @@ use crate::ffmpeg::process::start_recording_process;
 
 #[command]
 pub async fn enable_replay(app: AppHandle) -> Result<(), String> {
-    println!("Enable Replay command received");
+    log::info!("Enable Replay command received");
     
     // Release the lock BEFORE awaiting start_recording_process
     {
@@ -32,7 +32,7 @@ pub async fn enable_replay(app: AppHandle) -> Result<(), String> {
 
 #[command]
 pub async fn disable_replay(app: AppHandle) -> Result<(), String> {
-    println!("Disable Replay command received");
+    log::info!("Disable Replay command received");
     let state = app.state::<RecordingState>();
     
     // Send Stop signal
@@ -40,8 +40,8 @@ pub async fn disable_replay(app: AppHandle) -> Result<(), String> {
         let mut tx_guard = state.tx.lock().map_err(|e| e.to_string())?;
         if let Some(tx) = tx_guard.take() {
             match tx.send(RecordingMessage::Stop) {
-                Ok(_) => println!("Sent Stop signal to recording thread"),
-                Err(e) => eprintln!("Failed to send Stop signal: {}", e),
+                Ok(_) => log::info!("Sent Stop signal to recording thread"),
+                Err(e) => log::error!("Failed to send Stop signal: {}", e),
             }
         } else {
             return Err("Replay Buffer not active".to_string());

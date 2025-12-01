@@ -20,6 +20,9 @@ export interface AppConfig {
     framerate: number;
     bitrate: string;
     monitor_index: number;
+    video_profile?: string;
+    audio_bitrate?: string;
+    mic_audio_delay?: number;
     encoder: string;
     audio_source?: string;
     system_audio_device?: string;

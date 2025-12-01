@@ -37,10 +37,24 @@ pub struct RecordingConfig {
     pub video_profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_bitrate: Option<String>,
+    #[serde(default = "default_buffer_retention_seconds")]
+    pub buffer_retention_seconds: u32,
+    #[serde(default = "default_audio_backend")]
+    pub audio_backend: String, // "cpal" or "dshow"
+}
+
+fn default_audio_backend() -> String {
+    "cpal".to_string()
 }
 
 fn default_temp_path() -> String {
-    "%TEMP%\\SquadSync\\Buffer".to_string()
+    if let Some(mut path) = dirs::data_local_dir() {
+        path.push("SquadSync");
+        path.push("Buffer");
+        return path.to_string_lossy().to_string();
+    }
+    // Fallback if dirs fails (unlikely on Windows)
+    "C:\\SquadSync_Buffer".to_string()
 }
 
 fn default_buffer_duration() -> u32 {
@@ -49,6 +63,10 @@ fn default_buffer_duration() -> u32 {
 
 fn default_segment_time() -> u32 {
     30
+}
+
+fn default_buffer_retention_seconds() -> u32 {
+    480 // 8 minutes
 }
 
 impl Default for AppConfig {
@@ -62,7 +80,7 @@ impl Default for AppConfig {
         Self {
             recording: RecordingConfig {
                 path: String::new(),
-                temp_path: String::from("%TEMP%\\SquadSync\\Buffer"), // Default temp path
+                temp_path: default_temp_path(),
                 resolution: Some("native".to_string()),
                 framerate: 60,
                 bitrate: None,
@@ -77,6 +95,8 @@ impl Default for AppConfig {
                 video_tune: None,
                 video_profile: None,
                 audio_bitrate: None,
+                buffer_retention_seconds: 300,
+                audio_backend: "cpal".to_string(),
             },
         }
     }
@@ -89,10 +109,14 @@ impl AppConfig {
         
         if let Some(path) = &config_path {
             if path.exists() {
-                if let Ok(content) = fs::read_to_string(path) {
-                    if let Ok(config) = toml::from_str(&content) {
-                        return config;
-                    }
+                match fs::read_to_string(path) {
+                    Ok(content) => {
+                        match toml::from_str(&content) {
+                            Ok(config) => return config,
+                            Err(e) => log::error!("Failed to parse config file: {}", e),
+                        }
+                    },
+                    Err(e) => log::error!("Failed to read config file: {}", e),
                 }
             }
         }

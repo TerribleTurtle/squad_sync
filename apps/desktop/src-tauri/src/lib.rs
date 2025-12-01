@@ -1,4 +1,5 @@
 use tauri::Manager;
+use std::os::windows::process::CommandExt;
 
 pub mod ffmpeg;
 pub mod commands;
@@ -17,15 +18,16 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_log::Builder::default().build())
     .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
         if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
             if shortcut.matches(tauri_plugin_global_shortcut::Modifiers::ALT, tauri_plugin_global_shortcut::Code::F10) {
-                println!("Global Hotkey Triggered");
+                log::info!("Global Hotkey Triggered");
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
                     match crate::commands::replay::save_replay_impl(&app_handle).await {
-                        Ok(path) => println!("Replay saved via hotkey: {}", path),
-                        Err(e) => eprintln!("Failed to save replay via hotkey: {}", e),
+                        Ok(path) => log::info!("Replay saved via hotkey: {}", path),
+                        Err(e) => log::error!("Failed to save replay via hotkey: {}", e),
                     }
                 });
             }
@@ -59,15 +61,30 @@ pub fn run() {
       let temp_path_str = config.recording.temp_path.replace("%TEMP%", &std::env::temp_dir().to_string_lossy());
       let buffer_dir = std::path::PathBuf::from(temp_path_str);
       if buffer_dir.exists() {
-          println!("Cleaning up buffer directory: {:?}", buffer_dir);
+          log::info!("Cleaning up buffer directory: {:?}", buffer_dir);
           let _ = std::fs::remove_dir_all(&buffer_dir);
           let _ = std::fs::create_dir_all(&buffer_dir);
       }
 
+      // Set High Priority for the main process
+      let pid = std::process::id();
+      std::thread::spawn(move || {
+          const CREATE_NO_WINDOW: u32 = 0x08000000;
+          let _ = std::process::Command::new("powershell")
+              .args(&[
+                  "-NoProfile", 
+                  "-Command", 
+                  &format!("Get-Process -Id {} | ForEach-Object {{ $_.PriorityClass = 'High' }}", pid)
+              ])
+              .creation_flags(CREATE_NO_WINDOW)
+              .output();
+          log::info!("Set Main Process (PID: {}) to High Priority", pid);
+      });
+
       // Register Global Shortcut
       use tauri_plugin_global_shortcut::GlobalShortcutExt;
       if let Err(e) = app.handle().global_shortcut().register("Alt+F10") {
-          eprintln!("Failed to register global shortcut: {}", e);
+          log::error!("Failed to register global shortcut: {}", e);
       }
 
       Ok(())

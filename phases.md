@@ -31,13 +31,12 @@
 - [x] Implement Configuration Management (config.toml) & Advanced Overrides
 - [x] **High Performance Capture** (ddagrab + Zero-Copy)
 - [x] **Manual Recording Mode** (MP4 Output)
-- [x] **Circular Buffer Mode** (Replay Buffer Engine) - *MPEG-TS Segments*
+- [x] **Circular Buffer Mode** (Replay Buffer Engine) - *Fragmented MP4*
 - [ ] **Buffer Cleanup Logic** (Startup Cleanup)
 - [ ] **Game/System Audio Capture** (via Config)
 - [x] **Screen Selector** (Multi-Monitor Support)
 - [x] **Dynamic Bitrate & Smart Resolution**
 - [x] **Global Hotkey** (Alt+F10)
-
 ## **Phase 3: MVP Robustness & Polish**
 **Goal:** Ensure the app is stable, safe, and performant enough for public release.
 **Priority:** HIGH
