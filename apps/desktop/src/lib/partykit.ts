@@ -6,22 +6,45 @@ export class PartyKitClient {
   private messageHandlers: Set<(msg: ServerMessage) => void> = new Set();
 
   constructor(host: string, roomId: string, userId: string) {
+    // Force WS (insecure) for localhost and IP addresses to avoid SSL issues
+    const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(host);
+    const protocol = host.includes('localhost') || isIP ? 'ws' : undefined;
+
+    const debugInfo = {
+      host,
+      roomId,
+      userId,
+      isIP,
+      protocol,
+      fullUrl: `${protocol || 'wss'}://${host}/party/${roomId}`,
+    };
+
+    console.log('🔌 PartyKitClient initializing:', debugInfo);
+
+    // Show debug alert (remove after debugging)
+    // alert(
+    //   `DEBUG: PartyKit Connection\nHost: ${host}\nProtocol: ${protocol || 'wss'}\nFull URL: ${debugInfo.fullUrl}\nIs IP: ${isIP}`
+    // );
+
     this.socket = new PartySocket({
       host,
       room: roomId,
       id: userId,
+      protocol: protocol as 'ws' | 'wss' | undefined,
     });
 
     this.socket.addEventListener('open', () => {
+      console.log('✅ PartySocket connected');
       this.notifyConnectionHandlers('connect');
     });
 
-    this.socket.addEventListener('close', () => {
+    this.socket.addEventListener('close', (event) => {
+      console.log('❌ PartySocket disconnected:', event);
       this.notifyConnectionHandlers('disconnect');
     });
 
     this.socket.addEventListener('error', (err) => {
-      console.error('PartySocket error:', err);
+      console.error('🔥 PartySocket error:', err);
       this.notifyConnectionHandlers('error', err);
     });
 

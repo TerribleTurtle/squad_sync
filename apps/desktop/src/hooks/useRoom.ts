@@ -24,10 +24,12 @@ export function useRoom(
 
   useEffect(() => {
     if (!roomId || !userId) {
+      console.log('⚠️ useRoom: Missing roomId or userId', { roomId, userId });
       setConnectionState('disconnected');
       return;
     }
 
+    console.log('🔄 useRoom: Initializing connection', { roomId, userId });
     setConnectionState('connecting');
     setError(null);
 
@@ -36,15 +38,18 @@ export function useRoom(
 
     // Connection handlers
     const unsubConnect = client.onConnect(() => {
+      console.log('✅ useRoom: Connected');
       setConnectionState('connected');
       setError(null);
     });
 
     const unsubDisconnect = client.onDisconnect(() => {
+      console.log('❌ useRoom: Disconnected');
       setConnectionState('disconnected');
     });
 
     const unsubError = client.onError((err) => {
+      console.error('🔥 useRoom: Connection error', err);
       setConnectionState('error');
       setError('Connection error occurred');
       console.error('PartyKit error:', err);

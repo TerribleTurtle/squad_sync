@@ -3,6 +3,7 @@ import { useRoom } from '../../hooks/useRoom';
 import { useSettings } from '../../hooks/useSettings';
 import { JoinRoom } from './JoinRoom';
 import { SquadList } from './SquadList';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 interface RoomManagerProps {
   onClipStart?: (timestamp: number) => void;
@@ -54,7 +55,39 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
     setRoomId('');
   };
 
-  if (isJoined && roomState) {
+  if (isJoined) {
+    if (error) {
+      return (
+        <div className="w-full max-w-sm mx-auto p-6 bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl flex flex-col items-center justify-center min-h-[200px]">
+          <AlertCircle className="text-red-400 mb-4" size={32} />
+          <h3 className="text-lg font-bold text-white">Connection Failed</h3>
+          <p className="text-red-400 text-sm mt-2 text-center">{error}</p>
+          <button
+            onClick={handleLeave}
+            className="mt-6 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors"
+          >
+            Back to Menu
+          </button>
+        </div>
+      );
+    }
+
+    if (!roomState) {
+      return (
+        <div className="w-full max-w-sm mx-auto p-6 bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl flex flex-col items-center justify-center min-h-[200px]">
+          <Loader2 className="animate-spin text-indigo-500 mb-4" size={32} />
+          <h3 className="text-lg font-bold text-white">Connecting to Squad...</h3>
+          <p className="text-slate-400 text-sm mt-2">Establishing secure connection</p>
+          <button
+            onClick={handleLeave}
+            className="mt-6 text-sm text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      );
+    }
+
     return (
       <SquadList
         roomState={roomState}

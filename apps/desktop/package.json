@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run setup:ffmpeg && tsc && vite build",
+    "build": "pnpm run setup:ffmpeg && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "setup:ffmpeg": "node scripts/setup-ffmpeg.js",
