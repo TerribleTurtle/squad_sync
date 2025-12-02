@@ -19,6 +19,16 @@ export default class Server implements Party.Server {
     this.rateLimiter = new RateLimiter();
   }
 
+  async onStart() {
+    // Clear all storage on startup to prevent zombie members from previous runs
+    // This ensures a clean state if the server restarts
+    const stored = await this.room.storage.list();
+    for (const key of stored.keys()) {
+      await this.room.storage.delete(key);
+    }
+    console.log(`Cleared ${stored.size} items from storage on start`);
+  }
+
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     console.log(`Connected: ${conn.id} to room ${this.room.id}`);
   }
@@ -51,13 +61,18 @@ export default class Server implements Party.Server {
       switch (msg.type) {
         case 'JOIN_ROOM':
           this.connToUser.set(sender.id, msg.userId);
+          // Persist connection mapping for recovery after restart
+          await this.room.storage.put(`conn:${sender.id}`, msg.userId);
           await this.roomHandler.handleJoin(sender, msg);
           break;
         case 'LEAVE_ROOM':
-          const userId = this.connToUser.get(sender.id);
+          const userId =
+            this.connToUser.get(sender.id) ||
+            (await this.room.storage.get<string>(`conn:${sender.id}`));
           if (userId) {
             await this.roomHandler.handleLeave(sender, userId);
             this.connToUser.delete(sender.id);
+            await this.room.storage.delete(`conn:${sender.id}`);
           }
           break;
         case 'TIME_SYNC_REQUEST':
@@ -87,10 +102,17 @@ export default class Server implements Party.Server {
 
   async onClose(conn: Party.Connection) {
     console.log(`Disconnected: ${conn.id}`);
-    const userId = this.connToUser.get(conn.id);
+    let userId = this.connToUser.get(conn.id);
+
+    if (!userId) {
+      // Try to recover from storage
+      userId = await this.room.storage.get<string>(`conn:${conn.id}`);
+    }
+
     if (userId) {
       await this.roomHandler.handleLeave(conn, userId);
       this.connToUser.delete(conn.id);
+      await this.room.storage.delete(`conn:${conn.id}`);
     }
   }
 }

@@ -17,6 +17,10 @@
       ]
     },
     "fs:allow-read-text-file",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [{ "path": "$VIDEO/**" }]
+    },
     "fs:allow-write-file",
     "dialog:allow-open",
     "dialog:allow-save",

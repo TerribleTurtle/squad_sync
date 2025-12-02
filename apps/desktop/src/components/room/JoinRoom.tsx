@@ -3,11 +3,23 @@ import { Users, ArrowRight, Plus } from 'lucide-react';
 
 interface JoinRoomProps {
   onJoin: (roomId: string, displayName: string) => void;
+  initialDisplayName?: string;
+  onDisplayNameChange?: (name: string) => void;
 }
 
-export const JoinRoom: React.FC<JoinRoomProps> = ({ onJoin }) => {
+export const JoinRoom: React.FC<JoinRoomProps> = ({
+  onJoin,
+  initialDisplayName = '',
+  onDisplayNameChange,
+}) => {
   const [roomId, setRoomId] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [displayName, setDisplayName] = useState(initialDisplayName);
+
+  React.useEffect(() => {
+    if (initialDisplayName) {
+      setDisplayName(initialDisplayName);
+    }
+  }, [initialDisplayName]);
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,6 +33,12 @@ export const JoinRoom: React.FC<JoinRoomProps> = ({ onJoin }) => {
     if (displayName) {
       onJoin(randomId, displayName);
     }
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newName = e.target.value;
+    setDisplayName(newName);
+    onDisplayNameChange?.(newName);
   };
 
   return (
@@ -38,7 +56,7 @@ export const JoinRoom: React.FC<JoinRoomProps> = ({ onJoin }) => {
           <input
             type="text"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={handleNameChange}
             placeholder="Enter your name"
             className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
             required

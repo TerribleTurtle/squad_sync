@@ -11,18 +11,13 @@ interface RoomManagerProps {
 export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
   const { config, updateUserConfig, saveSettings } = useSettings();
   const [roomId, setRoomId] = useState<string>('');
+  const [displayName, setDisplayName] = useState('');
   const [isJoined, setIsJoined] = useState(false);
 
-  // Initialize user identity if missing
+  // Initialize user identity from config
   useEffect(() => {
-    if (config && (!config.user?.user_id || !config.user?.display_name)) {
-      // This is a bit of a hack since updateRecordingConfig is typed for recording config
-      // We might need to update useSettings to handle root config updates properly
-      // For now, let's assume we can update it or we need to fix useSettings
-      // Actually, looking at useSettings, updateRecordingConfig ONLY updates recording object.
-      // We need a way to update the user object.
-      // Let's assume for this step we just use local state if config is missing,
-      // but ideally we should update the backend to support user config updates.
+    if (config?.user?.display_name) {
+      setDisplayName(config.user.display_name);
     }
   }, [config]);
 
@@ -30,17 +25,18 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
   // Use useMemo to ensure the random ID doesn't change on every render
   const fallbackId = React.useMemo(() => 'user-' + Math.floor(Math.random() * 10000), []);
   const userId = config?.user?.user_id || fallbackId;
-  const displayName = config?.user?.display_name || 'Player';
+  const effectiveDisplayName = displayName || 'Player';
 
   const { roomState, client, connectionState, error, triggerClip } = useRoom(
     isJoined ? roomId : '',
     userId,
-    displayName,
+    effectiveDisplayName,
     onClipStart
   );
 
   const handleJoin = (id: string, name: string) => {
     setRoomId(id);
+    setDisplayName(name);
     if (config) {
       updateUserConfig('display_name', name);
       // If we don't have a user_id, generate one and save it too
@@ -71,5 +67,11 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
     );
   }
 
-  return <JoinRoom onJoin={handleJoin} />;
+  return (
+    <JoinRoom
+      onJoin={handleJoin}
+      initialDisplayName={displayName}
+      onDisplayNameChange={(name) => updateUserConfig('display_name', name)}
+    />
+  );
 };

@@ -213,6 +213,26 @@ impl RecordingSession {
             let video_pid = video_child.id();
             let audio_pid = audio_child.id();
 
+            // 5a. Assign to Job Object (Zombie Prevention)
+            #[cfg(target_os = "windows")]
+            let _job_object = {
+                match crate::job_object::JobObject::new() {
+                    Ok(job) => {
+                        if let Err(e) = job.add_process(&video_child) {
+                            error!("Failed to assign video process to job object: {}", e);
+                        }
+                        if let Err(e) = job.add_process(&audio_child) {
+                            error!("Failed to assign audio process to job object: {}", e);
+                        }
+                        Some(job)
+                    },
+                    Err(e) => {
+                        error!("Failed to create Job Object: {}", e);
+                        None
+                    }
+                }
+            };
+
 
             
             // 5b. Write Metadata for Sync

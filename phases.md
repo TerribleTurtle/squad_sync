@@ -52,6 +52,7 @@
 - [ ] **Disk Space Watchdog** (Auto-disable if low disk space) - _Deferred_
 - [ ] **Structured Error Handling** (AppError enum, User-friendly messages) - _Deferred_
 - [x] **Process Priority Management** (Prevent game lag)
+- [x] **Zombie Process Prevention** (Windows Job Objects)
 - [x] **Verify Audio Sync** (Long duration test)
 - [x] **Migrate to MKV/PCM** (Intermediate Recording Format)
 - [x] **Decoupled Audio/Video Pipeline**
@@ -100,7 +101,7 @@
 - [ ] **Implementation**
   - [x] Implement Room Logic (Join/Leave) in PartyKit
   - [x] Implement Client WebSocket Hook (`useRoom`)
-  - [ ] Implement Signaling Error Handling
+  - [x] Implement Signaling Error Handling
 - [ ] **Verification**
   - [x] Verify Room Connection (Multi-Client)
   - [ ] Verify Error States (Disconnect/Reconnect)
@@ -109,18 +110,18 @@
 
 ## 📅 Upcoming Milestones
 
-### **Phase 6: Cloud Upload & Playback**
+### **Phase 6: Playback & Cloud**
 
-**Goal:** Complete the loop.
+**Goal:** Complete the loop with local review and cloud sharing.
 
-- [ ] **Remote Clip Triggering**
-  - [x] Implement `TRIGGER_CLIP` (PartyKit) & `START_CLIP` (Client)
-  - [x] Verify synchronized trigger latency
-- [ ] **Clip Generation & Upload**
+- [x] **Local Playback**
+  - [x] Implement `LocalPlaybackView` (Watch/Manage local clips)
+  - [x] Implement basic clip management (Delete/Rename)
+  - [x] Implement video thumbnails
+- [ ] **Cloud & Web Playback**
   - [ ] Implement `concat_segments` FFmpeg command
   - [ ] Implement R2 Upload (Presigned URLs)
-- [ ] **Playback & Sync**
-  - [ ] Implement `PlaybackView` Grid (Canvas/Video)
+  - [ ] Implement `WebSquadGrid` (Canvas/Video)
   - [ ] Implement Leader/Follower Seek Sync
   - [ ] Verify frame-perfect playback synchronization
 
@@ -140,4 +141,6 @@
 - [ ] **Match Summary**: Session history and basic stats.
 - [ ] **Security Hardening**:
   - [ ] Implement strict Content Security Policy (CSP).
+  - [ ] Implement strict Content Security Policy (CSP).
   - [ ] Restrict `ffmpeg` execution arguments or use a sidecar wrapper.
+- [ ] **Built-in Video Player**: Custom player with scrubbing, volume control, and trimming.

@@ -19,6 +19,7 @@
     "@tauri-apps/plugin-http": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "clsx": "^2.1.0",
+    "date-fns": "^4.1.0",
     "lucide-react": "^0.300.0",
     "partysocket": "^1.1.6",
     "react": "^18.2.0",

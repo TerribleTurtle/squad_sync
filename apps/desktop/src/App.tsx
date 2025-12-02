@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Settings } from './components/Settings';
 import { Tooltip } from './components/ui/Tooltip';
 import { RoomManager } from './components/room/RoomManager';
-import { Settings2, Circle, Disc, Square, CheckCircle2, X, Info } from 'lucide-react';
+import { Settings2, Circle, Disc, Square, CheckCircle2, X, Info, Film } from 'lucide-react';
+import { LocalPlaybackView } from './components/playback/LocalPlaybackView';
 import { useToastStore } from './stores/toastStore';
 import { useRecorder } from './hooks/useRecorder';
 
@@ -12,6 +13,7 @@ function App() {
     useRecorder();
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showRecordings, setShowRecordings] = useState(false);
 
   return (
     <>
@@ -39,6 +41,15 @@ function App() {
               </div>
             </div>
 
+            <Tooltip content="Recordings" position="bottom">
+              <button
+                onClick={() => setShowRecordings(!showRecordings)}
+                className={`p-2.5 rounded-xl transition-all duration-200 ${showRecordings ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <Film size={20} />
+              </button>
+            </Tooltip>
+
             <Tooltip content="Settings" position="right">
               <button
                 onClick={() => setShowSettings(!showSettings)}
@@ -54,7 +65,7 @@ function App() {
             {!isReplayActive ? (
               <button
                 type="button"
-                className={`group relative w-full py-7 rounded-2xl font-bold text-lg transition-all duration-300 overflow-hidden ${
+                className={`group relative w-full py-7 px-8 rounded-2xl font-bold text-lg transition-all duration-300 overflow-hidden ${
                   isBuffering
                     ? 'bg-slate-800/50 text-slate-500 cursor-wait border border-white/5'
                     : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-[0_0_30px_-5px_rgba(79,70,229,0.3)] border border-indigo-400/20 hover:scale-[1.02] hover:shadow-[0_0_40px_-5px_rgba(79,70,229,0.4)]'
@@ -151,6 +162,30 @@ function App() {
               <button
                 onClick={() => setShowSettings(false)}
                 className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700 rounded-full transition-colors z-10"
+              >
+                <span className="sr-only">Close</span>
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recordings Modal Overlay */}
+      {showRecordings && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          onClick={() => setShowRecordings(false)}
+        >
+          <div
+            className="w-full max-w-5xl h-[80vh] animate-in zoom-in-95 slide-in-from-bottom-2 duration-200 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative flex-1 p-6 overflow-hidden">
+              <LocalPlaybackView />
+              <button
+                onClick={() => setShowRecordings(false)}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700 rounded-full transition-colors z-10"
               >
                 <span className="sr-only">Close</span>
                 <X size={20} />

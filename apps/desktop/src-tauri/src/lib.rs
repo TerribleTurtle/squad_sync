@@ -9,6 +9,8 @@ pub mod audio;
 pub mod error;
 pub mod constants;
 pub mod ntp;
+#[cfg(target_os = "windows")]
+pub mod job_object;
 
 use state::RecordingState;
 
@@ -49,7 +51,14 @@ pub fn run() {
         commands::config::update_config,
         commands::devices::get_audio_devices,
         commands::devices::get_system_audio_devices,
-        commands::monitors::get_monitors
+        commands::devices::get_system_audio_devices,
+        commands::monitors::get_monitors,
+        commands::playback::get_recordings,
+        commands::playback::delete_recording,
+        commands::playback::rename_recording,
+        commands::playback::show_in_folder,
+        commands::playback::open_file,
+        commands::playback::generate_thumbnail
     ])
     .setup(|app| {
       #[cfg(debug_assertions)]

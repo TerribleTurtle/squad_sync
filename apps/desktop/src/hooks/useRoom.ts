@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { PartyKitClient } from '../lib/partykit';
 import { RoomState, RoomMember } from '@squadsync/shared';
 import { PARTYKIT_HOST } from '../lib/constants';
+import { useToastStore } from '../stores/toastStore';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -37,14 +38,6 @@ export function useRoom(
     const unsubConnect = client.onConnect(() => {
       setConnectionState('connected');
       setError(null);
-
-      // Join the room on connect
-      client.send({
-        type: 'JOIN_ROOM',
-        roomId,
-        userId,
-        displayName,
-      });
     });
 
     const unsubDisconnect = client.onDisconnect(() => {
@@ -100,6 +93,12 @@ export function useRoom(
           // Use the ref here
           onClipStartRef.current?.(msg.referenceTime);
           break;
+        case 'ERROR':
+          console.error('❌ Signaling Error:', msg);
+          setError(`[${msg.code}] ${msg.message}`);
+          setConnectionState('error');
+          useToastStore.getState().showToast(`Signaling Error: ${msg.message}`, 'error');
+          break;
       }
     });
 
@@ -112,7 +111,20 @@ export function useRoom(
       setConnectionState('disconnected');
       clientRef.current = null;
     };
-  }, [roomId, userId, displayName]); // Removed onClipStart from dependencies
+  }, [roomId, userId]); // Only reconnect if room or user ID changes
+
+  // Separate effect for joining/updating user info
+  useEffect(() => {
+    if (connectionState === 'connected' && clientRef.current) {
+      console.log('Sending JOIN_ROOM with name:', displayName);
+      clientRef.current.send({
+        type: 'JOIN_ROOM',
+        roomId,
+        userId,
+        displayName,
+      });
+    }
+  }, [connectionState, roomId, userId, displayName]);
 
   const triggerClip = () => {
     if (clientRef.current) {

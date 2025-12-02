@@ -60,11 +60,11 @@ fn default_temp_path() -> String {
 }
 
 fn default_buffer_duration() -> u32 {
-    120
+    60
 }
 
 fn default_segment_time() -> u32 {
-    30
+    15
 }
 
 fn default_buffer_retention_seconds() -> u32 {
@@ -79,19 +79,25 @@ impl Default for AppConfig {
             .map(|d| d.name().unwrap_or_default())
             .filter(|n| !n.is_empty());
 
+        // Auto-detect default speaker
+        let system_audio_device = cpal::default_host()
+            .default_output_device()
+            .map(|d| d.name().unwrap_or_default())
+            .filter(|n| !n.is_empty());
+
         Self {
             recording: RecordingConfig {
                 path: String::new(),
                 temp_path: default_temp_path(),
-                resolution: Some("native".to_string()),
+                resolution: Some("1920x1080".to_string()),
                 framerate: 60,
                 bitrate: None,
-                buffer_duration: 120, // 2 minutes default buffer
-                segment_time: 30,     // 30 second segments
+                buffer_duration: 60, // 1 minute default buffer
+                segment_time: 15,     // 15 second segments
                 monitor_index: 0,
                 encoder: "auto".to_string(),
                 audio_source,
-                system_audio_device: None,
+                system_audio_device,
                 audio_codec: None,
                 video_preset: None,
                 video_tune: None,

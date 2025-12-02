@@ -54,18 +54,32 @@ export class PartyKitClient {
   }
 
   public onConnect(handler: () => void) {
-    this.connectionHandlers.add({ type: 'connect', handler });
-    return () => this.connectionHandlers.delete({ type: 'connect', handler });
+    const handlerObj = { type: 'connect' as const, handler };
+    this.connectionHandlers.add(handlerObj);
+    // If already connected, fire immediately
+    if (this.socket.readyState === 1) {
+      // WebSocket.OPEN
+      handler();
+    }
+    return () => {
+      this.connectionHandlers.delete(handlerObj);
+    };
   }
 
   public onDisconnect(handler: () => void) {
-    this.connectionHandlers.add({ type: 'disconnect', handler });
-    return () => this.connectionHandlers.delete({ type: 'disconnect', handler });
+    const handlerObj = { type: 'disconnect' as const, handler };
+    this.connectionHandlers.add(handlerObj);
+    return () => {
+      this.connectionHandlers.delete(handlerObj);
+    };
   }
 
   public onError(handler: (err: Event) => void) {
-    this.connectionHandlers.add({ type: 'error', handler });
-    return () => this.connectionHandlers.delete({ type: 'error', handler });
+    const handlerObj = { type: 'error' as const, handler };
+    this.connectionHandlers.add(handlerObj);
+    return () => {
+      this.connectionHandlers.delete(handlerObj);
+    };
   }
 
   private notifyHandlers(msg: ServerMessage) {
