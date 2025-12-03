@@ -65,6 +65,24 @@ export default class Server implements Party.Server {
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     console.log(`Connected: ${conn.id} to room ${this.room.id}`);
+
+    // Send existing clips to new connection
+    const clips = await this.room.storage.list<any>();
+    const clipList: any[] = [];
+    for (const [key, value] of clips) {
+      if (key.startsWith('clip:')) {
+        clipList.push(value);
+      }
+    }
+
+    if (clipList.length > 0) {
+      conn.send(
+        JSON.stringify({
+          type: 'CLIP_LIST',
+          clips: clipList,
+        })
+      );
+    }
   }
 
   async onMessage(message: string, sender: Party.Connection) {
@@ -134,9 +152,9 @@ export default class Server implements Party.Server {
           const s3 = this.getS3Client();
           const bucketName = this.getEnv('R2_BUCKET_NAME');
 
+          const key = `uploads/${this.room.id}/${clipId}.mp4`;
           if (s3 && bucketName) {
             try {
-              const key = `uploads/${this.room.id}/${clipId}.mp4`;
               const command = new PutObjectCommand({
                 Bucket: bucketName,
                 Key: key,
@@ -160,13 +178,25 @@ export default class Server implements Party.Server {
             console.warn('⚠️ R2 not configured. Skipping upload URL generation.');
           }
 
+          const playbackUrl = `https://clips.fluxreplay.com/${key}`;
+
           const startClipMsg = {
             type: 'START_CLIP',
             clipId,
-            segmentCount: msg.segmentCount || 60, // Default to 60s if not specified
+            segmentCount: msg.segmentCount || 60,
             referenceTime: Date.now(),
             uploadUrl,
+            playbackUrl,
           };
+
+          // Store clip metadata
+          await this.room.storage.put(`clip:${clipId}`, {
+            id: clipId,
+            url: playbackUrl,
+            author: this.connToUser.get(sender.id) || 'Unknown',
+            timestamp: Date.now(),
+          });
+
           this.room.broadcast(JSON.stringify(startClipMsg));
           console.log(`Clip ${clipId} triggered by ${sender.id}`);
           break;
