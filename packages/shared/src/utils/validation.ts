@@ -27,10 +27,16 @@ export const UploadCompleteSchema = z.object({
   key: z.string().optional(),
 });
 
+export const RequestUploadUrlSchema = z.object({
+  type: z.literal('REQUEST_UPLOAD_URL'),
+  clipId: z.string(),
+});
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   JoinRoomSchema,
   LeaveRoomSchema,
   TimeSyncRequestSchema,
   TriggerClipSchema,
   UploadCompleteSchema,
+  RequestUploadUrlSchema,
 ]);

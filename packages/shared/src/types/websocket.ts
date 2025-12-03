@@ -24,6 +24,11 @@ export interface TriggerClipMessage {
   segmentCount: number; // Default 60
 }
 
+export interface RequestUploadUrlMessage {
+  type: 'REQUEST_UPLOAD_URL';
+  clipId: string;
+}
+
 export interface UploadCompleteMessage {
   type: 'UPLOAD_COMPLETE';
   clipId: string;
@@ -35,6 +40,7 @@ export type ClientMessage =
   | LeaveRoomMessage
   | TimeSyncRequestMessage
   | TriggerClipMessage
+  | RequestUploadUrlMessage
   | UploadCompleteMessage;
 
 // ============ Server → Client ============
@@ -66,7 +72,20 @@ export interface StartClipMessage {
   clipId: string;
   segmentCount: number;
   referenceTime: number;
-  uploadUrl: string; // Presigned PUT URL
+  // uploadUrl removed, client must request it
+}
+
+export interface UploadUrlGrantedMessage {
+  type: 'UPLOAD_URL_GRANTED';
+  clipId: string;
+  uploadUrl: string;
+  filename: string;
+}
+
+export interface ClipUpdatedMessage {
+  type: 'CLIP_UPDATED';
+  clipId: string;
+  view: any; // TODO: Define View type
 }
 
 export interface ClipReadyMessage {
@@ -92,6 +111,8 @@ export type ServerMessage =
   | MemberLeftMessage
   | TimeSyncResponseMessage
   | StartClipMessage
+  | UploadUrlGrantedMessage
+  | ClipUpdatedMessage
   | ClipReadyMessage
   | AllClipsReadyMessage
   | ErrorMessage;

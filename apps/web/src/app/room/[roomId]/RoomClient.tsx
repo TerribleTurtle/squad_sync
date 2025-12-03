@@ -12,8 +12,18 @@ interface RoomClientProps {
 const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_HOST || 'localhost:1999';
 
 export default function RoomClient({ roomId }: RoomClientProps) {
-  const [clips, setClips] = useState<WebClip[]>([]);
+  const [rawClips, setRawClips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Derive flat list of playable clips (views) for the grid
+  const clips: WebClip[] = rawClips.flatMap((clip) =>
+    (clip.views || []).map((view: any) => ({
+      id: `${clip.id}-${view.author}`, // Unique ID for React key
+      url: view.url,
+      author: view.author,
+      offsetMs: 0, // TODO: Sync logic
+    }))
+  );
 
   useEffect(() => {
     const socket = new PartySocket({
@@ -26,20 +36,40 @@ export default function RoomClient({ roomId }: RoomClientProps) {
       console.log('Web Client received:', msg);
 
       if (msg.type === 'CLIP_LIST') {
-        setClips(msg.clips);
+        setRawClips(msg.clips);
         setLoading(false);
       } else if (msg.type === 'START_CLIP') {
-        if (msg.playbackUrl) {
-          setClips((prev) => [
-            ...prev,
-            {
-              id: msg.clipId,
-              url: msg.playbackUrl,
-              author: 'New Clip',
-              offsetMs: 0,
-            },
-          ]);
-        }
+        // Add placeholder for new clip (initially no views)
+        setRawClips((prev) => [
+          ...prev,
+          {
+            id: msg.clipId,
+            timestamp: msg.referenceTime,
+            views: [],
+          },
+        ]);
+      } else if (msg.type === 'CLIP_UPDATED') {
+        setRawClips((prev) => {
+          const index = prev.findIndex((c) => c.id === msg.clipId);
+          if (index === -1) return prev;
+
+          const newClips = [...prev];
+          const clip = { ...newClips[index] };
+
+          // Update or add the view
+          const views = [...(clip.views || [])];
+          const viewIndex = views.findIndex((v: any) => v.author === msg.view.author);
+
+          if (viewIndex !== -1) {
+            views[viewIndex] = msg.view;
+          } else {
+            views.push(msg.view);
+          }
+
+          clip.views = views;
+          newClips[index] = clip;
+          return newClips;
+        });
       }
     });
 

@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
-    "lint": "eslint src/"
+    "lint": "eslint ."
   },
   "devDependencies": {
     "typescript": "^5.4.5"

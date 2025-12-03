@@ -55,6 +55,8 @@ export function useRoom(
       console.error('PartyKit error:', err);
     });
 
+    const pendingClipRef = useRef<{ clipId: string; referenceTime: number } | null>(null);
+
     // Listen for messages
     const unsubMessage = client.onMessage((msg) => {
       switch (msg.type) {
@@ -95,8 +97,30 @@ export function useRoom(
           break;
         case 'START_CLIP':
           console.log('🎥 START_CLIP received:', msg);
-          // Use the ref here
-          onClipStartRef.current?.(msg.referenceTime, msg.uploadUrl, msg.clipId);
+          // Store reference time and request upload URL
+          pendingClipRef.current = { clipId: msg.clipId, referenceTime: msg.referenceTime };
+
+          if (clientRef.current) {
+            console.log('📤 Requesting upload URL for clip:', msg.clipId);
+            clientRef.current.send({
+              type: 'REQUEST_UPLOAD_URL',
+              clipId: msg.clipId,
+            });
+          }
+          break;
+        case 'UPLOAD_URL_GRANTED':
+          console.log('✅ UPLOAD_URL_GRANTED received:', msg);
+          if (pendingClipRef.current && pendingClipRef.current.clipId === msg.clipId) {
+            // Now trigger the actual recording/upload
+            onClipStartRef.current?.(
+              pendingClipRef.current.referenceTime,
+              msg.uploadUrl,
+              msg.clipId
+            );
+            pendingClipRef.current = null;
+          } else {
+            console.warn('⚠️ Received UPLOAD_URL_GRANTED for unknown or stale clip:', msg.clipId);
+          }
           break;
         case 'ERROR':
           console.error('❌ Signaling Error:', msg);

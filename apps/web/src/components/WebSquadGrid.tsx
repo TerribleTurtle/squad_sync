@@ -51,10 +51,17 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
     }
   };
 
+  const getGridClass = (count: number) => {
+    if (count <= 1) return 'grid-cols-1';
+    if (count <= 4) return 'grid-cols-2';
+    if (count <= 9) return 'grid-cols-3';
+    return 'grid-cols-4';
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-950">
       {/* Grid */}
-      <div className="flex-1 grid grid-cols-2 gap-4 p-4 overflow-hidden">
+      <div className={`flex-1 grid ${getGridClass(clips.length)} gap-4 p-4 overflow-hidden`}>
         {clips.map((clip, index) => (
           <div
             key={clip.id}

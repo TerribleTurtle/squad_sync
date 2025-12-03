@@ -320,18 +320,22 @@ interface TriggerClipMessage {
   segmentCount: number; // Default 60
 }
 
+interface RequestUploadUrlMessage {
+  type: 'REQUEST_UPLOAD_URL';
+  clipId: string;
+}
+
 interface UploadCompleteMessage {
   type: 'UPLOAD_COMPLETE';
   clipId: string;
-  key: string;
+  key?: string;
 }
 
 // ============ Server → Client ============
 
 interface RoomStateMessage {
   type: 'ROOM_STATE';
-  members: RoomMember[];
-  serverTime: number;
+  state: RoomState;
 }
 
 interface MemberJoinedMessage {
@@ -356,24 +360,35 @@ interface StartClipMessage {
   clipId: string;
   segmentCount: number;
   referenceTime: number;
-  uploadUrl: string; // Presigned PUT URL
+  // uploadUrl removed, client must request it via REQUEST_UPLOAD_URL
+}
+
+interface UploadUrlGrantedMessage {
+  type: 'UPLOAD_URL_GRANTED';
+  clipId: string;
+  uploadUrl: string;
+  filename: string;
+}
+
+interface ClipUpdatedMessage {
+  type: 'CLIP_UPDATED';
+  clipId: string;
+  view: {
+    author: string;
+    url: string;
+    timestamp: number;
+  };
 }
 
 interface ClipReadyMessage {
   type: 'CLIP_READY';
-  clipId: string;
-  userId: string;
-  url: string; // Public URL for playback
+  clip: ClipMetadata;
 }
 
 interface AllClipsReadyMessage {
   type: 'ALL_CLIPS_READY';
   clipId: string;
-  clips: {
-    userId: string;
-    displayName: string;
-    url: string;
-  }[];
+  clips: ClipMetadata[];
 }
 
 interface ErrorMessage {
@@ -386,12 +401,12 @@ interface ErrorMessage {
 ### **7.2 R2 Bucket Structure**
 
 ```
-squad-clips/
-├── {ClipID}/
-│   ├── {UserID_A}.mp4
-│   ├── {UserID_B}.mp4
-│   ├── {UserID_C}.mp4
-│   └── {UserID_D}.mp4
+uploads/
+├── {RoomID}/
+│   ├── {ClipID}/
+│   │   ├── {UserID_A}.mp4
+│   │   ├── {UserID_B}.mp4
+│   │   └── ...
 ```
 
 ### **7.3 Configuration Schema**

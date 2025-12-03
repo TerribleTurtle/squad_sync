@@ -152,13 +152,37 @@ export default class Server implements Party.Server {
           break;
         case 'TRIGGER_CLIP':
           const clipId = crypto.randomUUID();
-          let uploadUrl = '';
+
+          // Just broadcast the start event. Clients will request their own upload URLs.
+          const startClipMsg = {
+            type: 'START_CLIP',
+            clipId,
+            segmentCount: msg.segmentCount || 60,
+            referenceTime: Date.now(),
+          };
+
+          // Initialize clip metadata in storage (will be updated as uploads complete)
+          await this.room.storage.put(`clip:${clipId}`, {
+            id: clipId,
+            timestamp: Date.now(),
+            views: [], // Track multiple views here
+          });
+
+          this.room.broadcast(JSON.stringify(startClipMsg));
+          console.log(`Clip ${clipId} triggered by ${sender.id}`);
+          break;
+
+        case 'REQUEST_UPLOAD_URL':
+          if (!msg.clipId) return;
 
           const s3 = this.getS3Client();
           const bucketName = this.getEnv('R2_BUCKET_NAME');
+          const requestUserId = this.connToUser.get(sender.id);
 
-          const key = `uploads/${this.room.id}/${clipId}.mp4`;
-          if (s3 && bucketName) {
+          if (s3 && bucketName && requestUserId) {
+            // Unique key per user: uploads/{roomId}/{clipId}/{userId}.mp4
+            const key = `uploads/${this.room.id}/${msg.clipId}/${requestUserId}.mp4`;
+
             try {
               const command = new PutObjectCommand({
                 Bucket: bucketName,
@@ -166,9 +190,17 @@ export default class Server implements Party.Server {
                 ContentType: 'video/mp4',
               });
 
-              // Generate Presigned URL (valid for 15 mins)
-              uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
+              const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
               console.log(`✅ Generated Presigned URL for ${key}`);
+
+              sender.send(
+                JSON.stringify({
+                  type: 'UPLOAD_URL_GRANTED',
+                  clipId: msg.clipId,
+                  uploadUrl,
+                  filename: `${requestUserId}.mp4`,
+                })
+              );
             } catch (err) {
               console.error('❌ Failed to generate presigned URL:', err);
               sender.send(
@@ -179,39 +211,19 @@ export default class Server implements Party.Server {
                 })
               );
             }
-          } else {
-            console.warn('⚠️ R2 not configured. Skipping upload URL generation.');
           }
-
-          const playbackUrl = `https://clips.fluxreplay.com/${key}`;
-
-          const startClipMsg = {
-            type: 'START_CLIP',
-            clipId,
-            segmentCount: msg.segmentCount || 60,
-            referenceTime: Date.now(),
-            uploadUrl,
-            playbackUrl,
-          };
-
-          // Store clip metadata
-          await this.room.storage.put(`clip:${clipId}`, {
-            id: clipId,
-            url: playbackUrl,
-            author: this.connToUser.get(sender.id) || 'Unknown',
-            timestamp: Date.now(),
-          });
-
-          this.room.broadcast(JSON.stringify(startClipMsg));
-          console.log(`Clip ${clipId} triggered by ${sender.id}`);
           break;
+
         case 'UPLOAD_COMPLETE':
           console.log('Upload complete from', sender.id, 'for clip', msg.clipId);
           const s3Verify = this.getS3Client();
           const bucketVerify = this.getEnv('R2_BUCKET_NAME');
-          const keyVerify = `uploads/${this.room.id}/${msg.clipId}.mp4`;
+          const verifyUserId = this.connToUser.get(sender.id);
 
-          if (s3Verify && bucketVerify) {
+          if (s3Verify && bucketVerify && verifyUserId) {
+            const keyVerify = `uploads/${this.room.id}/${msg.clipId}/${verifyUserId}.mp4`;
+            const playbackUrl = `https://clips.fluxreplay.com/${keyVerify}`;
+
             try {
               await s3Verify.send(
                 new HeadObjectCommand({
@@ -220,11 +232,42 @@ export default class Server implements Party.Server {
                 })
               );
               console.log(`✅ File verified in R2: ${keyVerify}`);
+
+              // Update clip metadata
+              const clipKey = `clip:${msg.clipId}`;
+              const clipData: any = (await this.room.storage.get(clipKey)) || {
+                id: msg.clipId,
+                timestamp: Date.now(),
+                views: [],
+              };
+
+              // Add or update this user's view
+              const view = {
+                author: verifyUserId, // Using userId as author for now, could be display name
+                url: playbackUrl,
+                timestamp: Date.now(),
+              };
+
+              // Remove existing view from same author if any
+              clipData.views = (clipData.views || []).filter((v: any) => v.author !== verifyUserId);
+              clipData.views.push(view);
+
+              await this.room.storage.put(clipKey, clipData);
+
+              // Notify all clients of the updated clip
+              this.room.broadcast(
+                JSON.stringify({
+                  type: 'CLIP_UPDATED',
+                  clipId: msg.clipId,
+                  view,
+                })
+              );
+
               sender.send(
                 JSON.stringify({
-                  type: 'ERROR', // Using ERROR type for now to show toast, or add a new SUCCESS type
+                  type: 'ERROR', // Keeping ERROR for toast for now
                   code: 'UPLOAD_VERIFIED',
-                  message: `File verified in R2: ${keyVerify}`,
+                  message: `File verified: ${keyVerify}`,
                 })
               );
             } catch (err) {
