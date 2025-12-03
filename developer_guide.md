@@ -1,4 +1,4 @@
-# **SquadSync Developer Guide**
+# **FluxReplay Developer Guide**
 
 This guide accompanies the `technical_specification.md` and provides concrete code examples and patterns to be used during development.
 
@@ -11,7 +11,7 @@ This guide accompanies the `technical_specification.md` and provides concrete co
 We use Zod for runtime validation of all external data (User input, WebSocket messages, Config files).
 
 ```typescript
-import { z } from "zod";
+import { z } from 'zod';
 
 // Define the schema
 const ClipRequestSchema = z.object({
@@ -34,13 +34,11 @@ async function handleClip(request: unknown) {
 Avoid throwing errors for expected failure modes (e.g., network errors). Use a Result type.
 
 ```typescript
-type Result<T, E = Error> = 
-  | { ok: true; value: T }
-  | { ok: false; error: E };
+type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E };
 
 async function uploadClip(url: string, data: Blob): Promise<Result<string>> {
   try {
-    const response = await fetch(url, { method: "PUT", body: data });
+    const response = await fetch(url, { method: 'PUT', body: data });
     if (!response.ok) {
       return { ok: false, error: new Error(`HTTP ${response.status}`) };
     }
@@ -52,29 +50,29 @@ async function uploadClip(url: string, data: Blob): Promise<Result<string>> {
 ```
 
 ---
- 
- ## **1.3 Tauri v2 Plugins (Frontend)**
- 
- In Tauri v2, core APIs are moved to plugins.
- 
- ```typescript
- // OLD (v1)
- // import { invoke } from "@tauri-apps/api/tauri";
- // import { appDataDir } from "@tauri-apps/api/path";
- 
- // NEW (v2)
- import { invoke } from "@tauri-apps/api/core";
- import { appDataDir } from "@tauri-apps/api/path"; // Now requires @tauri-apps/plugin-path
- import { Command } from "@tauri-apps/plugin-shell";
- 
- async function startFfmpeg() {
-   // Requires `shell` plugin and permissions
-   const command = Command.sidecar("ffmpeg", ["-i", ...]);
-   const child = await command.spawn();
- }
- ```
- 
- ---
+
+## **1.3 Tauri v2 Plugins (Frontend)**
+
+In Tauri v2, core APIs are moved to plugins.
+
+```typescript
+// OLD (v1)
+// import { invoke } from "@tauri-apps/api/tauri";
+// import { appDataDir } from "@tauri-apps/api/path";
+
+// NEW (v2)
+import { invoke } from "@tauri-apps/api/core";
+import { appDataDir } from "@tauri-apps/api/path"; // Now requires @tauri-apps/plugin-path
+import { Command } from "@tauri-apps/plugin-shell";
+
+async function startFfmpeg() {
+  // Requires `shell` plugin and permissions
+  const command = Command.sidecar("ffmpeg", ["-i", ...]);
+  const child = await command.spawn();
+}
+```
+
+---
 
 ## **2. Rust Patterns (Backend)**
 
@@ -89,10 +87,10 @@ use thiserror::Error;
 pub enum ClipError {
     #[error("FFmpeg process failed: {0}")]
     FfmpegFailed(String),
-    
+
     #[error("Buffer segment not found: {0}")]
     SegmentNotFound(String),
-    
+
     #[error("Upload failed: {0}")]
     UploadFailed(#[from] reqwest::Error),
 }
@@ -121,17 +119,17 @@ impl FfmpegCommand {
             output: String::new(),
         }
     }
-    
+
     pub fn encoder(mut self, encoder: Encoder) -> Self {
         self.encoder = encoder;
         self
     }
-    
+
     pub fn bitrate(mut self, bitrate: u32) -> Self {
         self.bitrate = bitrate;
         self
     }
-    
+
     pub fn build(self) -> Vec<String> {
         // Logic to construct the argument list
         vec![
@@ -155,7 +153,7 @@ async fn create_clip(
 ) -> ClipResult<ClipMetadata> {
     let segments = state.buffer.get_last_n_segments(segment_count)?;
     let output = state.buffer.concat_segments(&segments)?;
-    
+
     Ok(ClipMetadata {
         path: output,
         duration: segment_count as f64,
@@ -164,12 +162,12 @@ async fn create_clip(
 }
 ```
 
-```
- 
+````
+
  ### **2.4 Capabilities & Permissions (Tauri v2)**
- 
+
  Permissions are defined in `src-tauri/capabilities/default.json`.
- 
+
  ```json
  {
    "identifier": "default",
@@ -183,23 +181,23 @@ async fn create_clip(
      "core:fs:allow-write-file"
    ]
  }
- ```
- 
- ---
+````
+
+---
 
 ## **3. React Component Patterns**
 
 ### **3.1 Component Structure**
 
-*   **Imports**: External first, then internal.
-*   **Interface**: Props definition.
-*   **Component**: Hooks -> Early Returns -> Render.
+- **Imports**: External first, then internal.
+- **Interface**: Props definition.
+- **Component**: Hooks -> Early Returns -> Render.
 
 ### **3.2 Sync Logic Example (VideoGrid)**
 
 This example demonstrates the "Master/Follower" sync logic required for the multi-POV player.
 
-```tsx
+````tsx
 interface VideoGridProps {
   clips: Clip[];
   activeIndex: number;
@@ -208,15 +206,15 @@ interface VideoGridProps {
 
 export function VideoGrid({ clips, activeIndex, onActiveChange }: VideoGridProps) {
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
-  
+
   // Sync loop: Runs at 60fps to keep passive players in sync with active player
   useEffect(() => {
     const interval = setInterval(() => {
       const masterVideo = videoRefs.current[activeIndex];
       if (!masterVideo) return;
-      
+
       const masterTime = masterVideo.currentTime;
-      
+
       videoRefs.current.forEach((video, i) => {
         if (video && i !== activeIndex) {
           const drift = Math.abs(video.currentTime - masterTime);
@@ -227,10 +225,10 @@ export function VideoGrid({ clips, activeIndex, onActiveChange }: VideoGridProps
         }
       });
     }, 16);
-    
+
     return () => clearInterval(interval);
   }, [activeIndex]);
-  
+
   return (
     <div className="grid grid-cols-2 gap-2">
       {clips.map((clip, index) => (
@@ -256,15 +254,19 @@ To save GitHub Actions minutes and iterate quickly, run the full CI suite locall
 
 ```bash
 pnpm run ci
-```
+````
 
 ### **4.2 GitHub Actions**
 
 We use GitHub Actions for a final verification in the cloud. To conserve minutes, **automatic triggers (push/PR) are disabled**.
 
 **To run CI on GitHub:**
+
 1.  Go to the **Actions** tab in the repository.
 2.  Select the **CI** workflow.
 3.  Click **Run workflow**.
 4.  Select the branch (usually `main`) and click **Run workflow**.
+
+```
+
 ```

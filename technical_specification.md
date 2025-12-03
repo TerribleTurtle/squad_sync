@@ -1,13 +1,3 @@
-# **Technical Specification: SquadSync**
-
-## **1. Executive Overview**
-
-SquadSync is a desktop application designed for gaming squads to capture, sync, and review gameplay highlights from multiple perspectives (POVs). Unlike traditional streaming platforms, SquadSync utilizes a **"Silent Recorder" architecture**. It records high-quality video locally on each user's machine and only uploads video segments to the cloud when a "Clip" trigger is activated. This ensures zero network latency impact during gameplay and minimizes cloud storage costs.
-
-The system follows a **Distributed Peer-to-Cloud** model coordinated by a lightweight signaling server. The goal is to ship a focused, maintainable product that can scale to 1M+ users.
-
----
-
 ## **2. System Architecture**
 
 ### **2.1 High-Level Architecture**

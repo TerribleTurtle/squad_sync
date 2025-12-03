@@ -6,7 +6,7 @@ import { SquadList } from './SquadList';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 interface RoomManagerProps {
-  onClipStart?: (timestamp: number) => void;
+  onClipStart?: (timestamp: number, uploadUrl?: string) => void;
 }
 
 export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {

@@ -94,20 +94,7 @@ impl RecordingSession {
                 .with_audio_output_config(config.audio_codec, config.audio_bitrate, crate::constants::DEFAULT_AUDIO_SAMPLE_RATE, crate::constants::DEFAULT_AUDIO_CHANNELS)
                 .with_audio_backend(config.audio_backend.clone());
 
-            // Check for Hardware Scaling Support
-            use crate::ffmpeg::commands::HardwareScalingMode;
-            
-            let has_d3d11_scale = crate::ffmpeg::utils::check_filter_support(&app_clone, "scale_d3d11");
-            
-            let scaling_mode = if has_d3d11_scale {
-                info!("Using D3D11 Hardware Scaling");
-                HardwareScalingMode::D3D11
-            } else {
-                warn!("D3D11 Scaling not supported. CUDA interop (hwmap) is unstable. Falling back to Software Scaling (hwdownload).");
-                HardwareScalingMode::None
-            };
-            
-            let base_builder = base_builder.with_scaling_mode(scaling_mode);
+
 
             // 4. Prepare Commands (Video & Audio)
             use crate::ffmpeg::commands::CommandMode;

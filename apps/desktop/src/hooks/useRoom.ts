@@ -10,7 +10,7 @@ export function useRoom(
   roomId: string,
   userId: string,
   displayName: string,
-  onClipStart?: (timestamp: number) => void
+  onClipStart?: (timestamp: number, uploadUrl?: string) => void
 ) {
   const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
@@ -96,7 +96,7 @@ export function useRoom(
         case 'START_CLIP':
           console.log('🎥 START_CLIP received:', msg);
           // Use the ref here
-          onClipStartRef.current?.(msg.referenceTime);
+          onClipStartRef.current?.(msg.referenceTime, msg.uploadUrl);
           break;
         case 'ERROR':
           console.error('❌ Signaling Error:', msg);

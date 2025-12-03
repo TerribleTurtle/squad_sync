@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Play, Trash2, FolderOpen, Edit2, Check, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { readFile } from '@tauri-apps/plugin-fs';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Recording {
@@ -75,7 +76,12 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(`Are you sure you want to delete ${recording.name}?`)) {
+    const confirmed = await ask(`Are you sure you want to delete ${recording.name}?`, {
+      title: 'Delete Recording',
+      kind: 'warning',
+    });
+
+    if (confirmed) {
       try {
         await invoke('delete_recording', { path: recording.path });
         onDelete();

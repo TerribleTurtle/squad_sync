@@ -85,6 +85,8 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<Recordin
     };
 
     // 4. Smart Resolution & Bitrate Logic
+    let scaling_mode = encoder::get_best_scaling_mode(app);
+
     let (target_width, target_height, use_scaler) = if let Some(res_str) = &config.recording.resolution {
         if res_str.to_lowercase() == "native" {
             (width, height, false)
@@ -116,6 +118,7 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<Recordin
 
     println!("Configuring Recording: {}x{} @ {}fps, Bitrate: {}, Scaler: {}", 
         target_width, target_height, config.recording.framerate, bitrate, use_scaler);
+    println!("Scaling Mode: {:?}", scaling_mode);
 
     let system_audio_device = config.recording.system_audio_device.clone();
     let system_audio_enabled = system_audio_device.is_some();
@@ -123,6 +126,7 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<Recordin
     
     // 6. Build Command
     let builder = FfmpegCommandBuilder::new(output_pattern)
+        .with_scaling_mode(scaling_mode)
         .with_video_codec(encoder.as_ffmpeg_codec().to_string())
         .with_preset(config.recording.video_preset.clone())
         .with_tune(config.recording.video_tune.clone())

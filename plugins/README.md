@@ -1,6 +1,6 @@
-# SquadSync Plugins
+# FluxReplay Plugins
 
-This directory contains the source code for SquadSync plugins.
+This directory contains the source code for FluxReplay plugins.
 
 ## Structure
 

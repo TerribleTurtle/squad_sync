@@ -42,35 +42,73 @@ pub fn start_system_capture(device_name: Option<String>) -> Result<(u32, u16, cp
 }
 
 fn create_and_start_stream(device: cpal::Device, pipe_name: &'static str) -> Result<(u32, u16, cpal::Stream), String> {
-    let config = if pipe_name == SYSTEM_AUDIO_PIPE_NAME {
+    let supported_config = if pipe_name == SYSTEM_AUDIO_PIPE_NAME {
         device.default_output_config()
     } else {
         device.default_input_config()
     }.map_err(|e| e.to_string())?;
 
-    let sample_rate = config.sample_rate().0;
-    let channels = config.channels();
-    log::info!("Audio Format for {}: {}Hz, {} channels", pipe_name, sample_rate, channels);
+    let sample_format = supported_config.sample_format();
+    let sample_rate = supported_config.sample_rate().0;
+    let channels = supported_config.channels();
+    log::info!("Audio Format for {}: {}Hz, {} channels, {:?}", pipe_name, sample_rate, channels, sample_format);
     
-    let config: cpal::StreamConfig = config.into();
+    let config: cpal::StreamConfig = supported_config.into();
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
     let is_recording = Arc::new(AtomicBool::new(false));
-    let is_recording_clone = is_recording.clone();
-
+    
     let err_fn = move |err| log::error!("Error on stream {}: {}", pipe_name, err);
 
-    let stream = device.build_input_stream(
-        &config,
-        move |data: &[f32], _: &_| {
-            if !is_recording_clone.load(Ordering::Relaxed) {
-                return;
-            }
-            let bytes = bytemuck::cast_slice(data).to_vec();
-            let _ = tx.send(bytes);
+    let stream = match sample_format {
+        cpal::SampleFormat::F32 => {
+            let tx = tx.clone();
+            let is_recording = is_recording.clone();
+            device.build_input_stream(
+                &config,
+                move |data: &[f32], _: &_| {
+                    if is_recording.load(Ordering::Relaxed) {
+                        let bytes = bytemuck::cast_slice(data).to_vec();
+                        let _ = tx.send(bytes);
+                    }
+                },
+                err_fn,
+                None
+            )
         },
-        err_fn,
-        None
-    ).map_err(|e| e.to_string())?;
+        cpal::SampleFormat::I16 => {
+            let tx = tx.clone();
+            let is_recording = is_recording.clone();
+            device.build_input_stream(
+                &config,
+                move |data: &[i16], _: &_| {
+                    if is_recording.load(Ordering::Relaxed) {
+                        let f32_data: Vec<f32> = data.iter().map(|&s| s as f32 / 32768.0).collect();
+                        let bytes = bytemuck::cast_slice(&f32_data).to_vec();
+                        let _ = tx.send(bytes);
+                    }
+                },
+                err_fn,
+                None
+            )
+        },
+        cpal::SampleFormat::U16 => {
+            let tx = tx.clone();
+            let is_recording = is_recording.clone();
+            device.build_input_stream(
+                &config,
+                move |data: &[u16], _: &_| {
+                    if is_recording.load(Ordering::Relaxed) {
+                        let f32_data: Vec<f32> = data.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).collect();
+                        let bytes = bytemuck::cast_slice(&f32_data).to_vec();
+                        let _ = tx.send(bytes);
+                    }
+                },
+                err_fn,
+                None
+            )
+        },
+        _ => return Err(format!("Unsupported sample format: {:?}", sample_format)),
+    }.map_err(|e| e.to_string())?;
 
     stream.play().map_err(|e| e.to_string())?;
 

@@ -1,5 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { readFile } from '@tauri-apps/plugin-fs';
+import { fetch } from '@tauri-apps/plugin-http';
 import { useRecordingStore } from '../stores/recordingStore';
 import { useToastStore } from '../stores/toastStore';
 import { REPLAY_BUFFER_DELAY, CLIP_SAVE_DELAY } from '@squadsync/shared';
@@ -57,13 +59,45 @@ export function useRecorder() {
   }, [setReplayActive, setStatus, showToast]);
 
   const saveReplay = useCallback(
-    async (timestamp?: number) => {
+    async (timestamp?: number, uploadUrl?: string) => {
       try {
         setStatus('Saving Clip...');
         // Pass timestamp to backend (maps to trigger_timestamp in Rust)
-        await invoke('save_replay', { trigger_timestamp: timestamp });
+        const filePath = await invoke<string>('save_replay', { trigger_timestamp: timestamp });
         setStatus(`Clip Saved!`);
         showToast('Clip Saved Successfully!', 'success');
+
+        if (uploadUrl && filePath) {
+          try {
+            setStatus('Uploading Clip...');
+            console.log(`📤 Uploading ${filePath} to ${uploadUrl}`);
+
+            // Read file
+            const fileData = await readFile(filePath);
+
+            // Upload to R2 (Presigned URL)
+            const response = await fetch(uploadUrl, {
+              method: 'PUT',
+              body: fileData,
+              headers: {
+                'Content-Type': 'video/mp4',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error(`Upload failed: ${response.statusText}`);
+            }
+
+            console.log('✅ Upload Successful');
+            setStatus('Upload Complete!');
+            showToast('Clip Uploaded Successfully!', 'success');
+          } catch (uploadErr) {
+            console.error('Upload Error:', uploadErr);
+            showToast(`Upload Failed: ${uploadErr}`, 'error');
+            // Don't fail the whole operation, just the upload
+          }
+        }
+
         setTimeout(() => setStatus('Replay Buffer Active'), CLIP_SAVE_DELAY);
       } catch (e) {
         setStatus(`Error saving: ${e}`);

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "squad_sync",
+  "productName": "flux_replay",
   "version": "0.1.0",
-  "identifier": "com.squadsync.app",
+  "identifier": "com.fluxreplay.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build",
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "SquadSync",
+        "title": "FluxReplay",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
       }
     ],
     "security": {

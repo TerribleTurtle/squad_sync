@@ -15,6 +15,7 @@ use crate::constants::{
     BITRATE_MAX_MULTIPLIER, BITRATE_MAX_DIVISOR, BITRATE_BUF_MULTIPLIER, GOP_MULTIPLIER,
     DEFAULT_MIC_CHANNELS
 };
+use crate::ffmpeg::encoder::HardwareScalingMode;
 
 #[derive(Debug, Clone)]
 pub struct FfmpegCommandBuilder {
@@ -51,12 +52,7 @@ pub struct FfmpegCommandBuilder {
     scaling_mode: HardwareScalingMode,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum HardwareScalingMode {
-    None,
-    D3D11,
-    CUDA,
-}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandMode {
@@ -266,6 +262,7 @@ impl FfmpegCommandBuilder {
     fn build_video_filters(&self) -> Vec<String> {
         let mut args = Vec::new();
         let mut video_filters = String::new();
+        let mut is_hardware_frame = true; // ddagrab starts in D3D11
 
         // Resolution Logic
         let use_native_res = match &self.resolution {
@@ -280,30 +277,70 @@ impl FfmpegCommandBuilder {
                     match self.scaling_mode {
                         HardwareScalingMode::D3D11 => {
                             video_filters.push_str(&format!("scale_d3d11=width={}:height={}:format=nv12", parts[0], parts[1]));
+                            // Still D3D11
                         },
                         HardwareScalingMode::CUDA => {
                             // D3D11 (Input) -> Map to CUDA -> Scale CUDA -> NVENC (Native CUDA)
-                            // Note: hwmap=derive_device=cuda might be needed if not auto-handled.
-                            // Usually: hwmap=derive_device=cuda,scale_cuda=...
                             video_filters.push_str("hwmap=derive_device=cuda,");
                             video_filters.push_str(&format!("scale_cuda=w={}:h={}:format=nv12", parts[0], parts[1]));
+                            // Now CUDA
                         },
                         HardwareScalingMode::None => {
                             // Fallback to software scale
-                            // Just "hwdownload" lets FFmpeg pick the best format.
-                            // "scale" will handle the conversion if needed.
-                            video_filters.push_str("hwdownload,");
+                            // hwdownload -> format (force bgra/rgba to prevent nv12 negotiation error) -> scale
+                            video_filters.push_str("hwdownload,format=bgra,");
                             video_filters.push_str(&format!("scale={}:{}", parts[0], parts[1]));
+                            is_hardware_frame = false;
                         }
                     }
                 }
             }
         }
 
-        // REMOVED: fps filter (incompatible with d3d11 hardware frames in some contexts)
-        // We will use -r in encoding options instead.
+        if !video_filters.is_empty() {
+            // Ensure comma separator if we have previous filters
+            if !video_filters.ends_with(',') {
+                video_filters.push(',');
+            }
+        }
+
+        // --- FORMAT BRIDGING ---
+        // ddagrab outputs D3D11 surfaces. We need to bridge them to the encoder's expected format.
+        
+        if self.video_codec.contains("qsv") {
+            if is_hardware_frame {
+                // QSV needs a QSV surface derived from D3D11
+                video_filters.push_str("hwmap=derive_device=qsv,format=qsv");
+            } else {
+                // Already software (e.g. after software scale). 
+                // QSV encoder can handle system memory (nv12), so no extra bridge needed usually.
+                // But ensuring nv12 is good.
+                video_filters.push_str("format=nv12");
+            }
+        } else if self.video_codec.contains("libx264") {
+            if is_hardware_frame {
+                // Software encoding needs system memory
+                // hwdownload -> format (force bgra/rgba) -> format=nv12 (for encoder)
+                video_filters.push_str("hwdownload,format=bgra,format=nv12");
+                is_hardware_frame = false;
+            } else {
+                // Already software
+                video_filters.push_str("format=nv12");
+            }
+        } 
+        // NVENC and AMF (usually) support D3D11 input directly, so no bridging needed if is_hardware_frame.
+        // If !is_hardware_frame (software scaled), NVENC can also handle system memory.
+        if !is_hardware_frame && (self.video_codec.contains("nvenc") || self.video_codec.contains("amf")) {
+             // Ensure we are in a friendly format (nv12) if we dropped to software
+             video_filters.push_str("format=nv12");
+        }
 
         if !video_filters.is_empty() {
+            // Clean up trailing comma if any
+             if video_filters.ends_with(',') {
+                video_filters.pop();
+            }
+            
             args.push("-vf".to_string());
             args.push(video_filters);
         }
@@ -464,6 +501,25 @@ impl FfmpegCommandBuilder {
         // REMOVED: fps filter
         // video_filters.push_str(&format!("fps={}", self.framerate));
 
+        if !video_filters.is_empty() {
+             if !video_filters.ends_with(',') {
+                video_filters.push(',');
+            }
+        }
+
+        // --- FORMAT BRIDGING ---
+        if self.video_codec.contains("qsv") {
+            video_filters.push_str("hwmap=derive_device=qsv,format=qsv");
+        } else if self.video_codec.contains("libx264") {
+            video_filters.push_str("hwdownload,format=nv12");
+        }
+
+        if !video_filters.is_empty() {
+             if video_filters.ends_with(',') {
+                video_filters.pop();
+            }
+        }
+
         let has_mic = self.audio_source.is_some();
         let has_sys = self.system_audio;
 
@@ -516,6 +572,10 @@ impl FfmpegCommandBuilder {
         // --- VIDEO ENCODING ---
         args.extend(vec!["-c:v".to_string(), self.video_codec.clone()]);
         
+        // Sanitize preset based on codec
+        let raw_preset = self.preset.clone().unwrap_or(PRESET_P4.to_string());
+        let preset = Self::sanitize_preset(&self.video_codec, &raw_preset);
+
         if self.video_codec.contains("nvenc") {
             // Use shared utility for bitrate parsing
             let kbps = crate::ffmpeg::utils::parse_bitrate(&self.bitrate) / 1000;
@@ -524,7 +584,7 @@ impl FfmpegCommandBuilder {
                 "-b:v".to_string(), self.bitrate.clone(),
                 "-maxrate".to_string(), format!("{}k", kbps * BITRATE_MAX_MULTIPLIER / BITRATE_MAX_DIVISOR),
                 "-bufsize".to_string(), format!("{}k", kbps * BITRATE_BUF_MULTIPLIER),
-                "-preset".to_string(), self.preset.clone().unwrap_or(PRESET_P4.to_string()),
+                "-preset".to_string(), preset,
                 "-profile:v".to_string(), self.profile.clone().unwrap_or(PROFILE_HIGH.to_string()),
             ]);
             if let Some(tune) = &self.tune {
@@ -535,20 +595,20 @@ impl FfmpegCommandBuilder {
                 "-rc".to_string(), "cbr".to_string(),
                 "-b:v".to_string(), self.bitrate.clone(),
                 "-usage".to_string(), "transcoding".to_string(),
-                "-quality".to_string(), self.preset.clone().unwrap_or(PRESET_BALANCED.to_string()),
+                "-quality".to_string(), preset, // AMF uses -quality, not -preset
                 "-profile:v".to_string(), self.profile.clone().unwrap_or(PROFILE_HIGH.to_string()),
             ]);
         } else if self.video_codec.contains("qsv") {
             args.extend(vec![
                 "-rc".to_string(), "vbr".to_string(),
                 "-b:v".to_string(), self.bitrate.clone(),
-                "-preset".to_string(), self.preset.clone().unwrap_or(PRESET_VERYFAST.to_string()),
+                "-preset".to_string(), preset,
                 "-profile:v".to_string(), self.profile.clone().unwrap_or(PROFILE_HIGH.to_string()),
             ]);
         } else {
             args.extend(vec![
                 "-b:v".to_string(), self.bitrate.clone(),
-                "-preset".to_string(), self.preset.clone().unwrap_or(PRESET_ULTRAFAST.to_string()),
+                "-preset".to_string(), preset,
                 "-tune".to_string(), self.tune.clone().unwrap_or(TUNE_ZEROLATENCY.to_string()),
             ]);
         }
@@ -625,6 +685,45 @@ impl FfmpegCommandBuilder {
         }
         
         args
+    }
+
+    fn sanitize_preset(codec: &str, preset: &str) -> String {
+        let p = preset.to_lowercase();
+        
+        if codec.contains("nvenc") {
+            // NVENC expects p1-p7
+            match p.as_str() {
+                "speed" | "veryfast" | "faster" | "fast" => "p2".to_string(),
+                "balanced" | "medium" => "p4".to_string(),
+                "quality" | "slow" | "slower" | "veryslow" => "p6".to_string(),
+                val if val.starts_with('p') && val.len() == 2 => val.to_string(), // p1-p7
+                _ => "p4".to_string(),
+            }
+        } else if codec.contains("amf") {
+            // AMF expects speed, balanced, quality
+            match p.as_str() {
+                "p1" | "p2" | "veryfast" | "faster" | "fast" | "speed" => "speed".to_string(),
+                "p3" | "p4" | "medium" | "balanced" => "balanced".to_string(),
+                "p5" | "p6" | "p7" | "slow" | "slower" | "veryslow" | "quality" => "quality".to_string(),
+                _ => "balanced".to_string(),
+            }
+        } else if codec.contains("qsv") {
+            // QSV expects veryfast, medium, veryslow
+            match p.as_str() {
+                "p1" | "p2" | "speed" | "veryfast" | "faster" | "fast" => "veryfast".to_string(),
+                "p3" | "p4" | "balanced" | "medium" => "medium".to_string(),
+                "p5" | "p6" | "p7" | "quality" | "slow" | "slower" | "veryslow" => "veryslow".to_string(),
+                _ => "veryfast".to_string(),
+            }
+        } else {
+            // Software (x264) - Standard presets
+            match p.as_str() {
+                "p1" | "p2" | "speed" => "ultrafast".to_string(),
+                "p3" | "p4" | "balanced" => "veryfast".to_string(),
+                "p5" | "p6" | "p7" | "quality" => "medium".to_string(),
+                _ => p, // Pass through standard presets (ultrafast, veryfast, etc.)
+            }
+        }
     }
 }
 
@@ -845,5 +944,61 @@ mod tests {
         assert!(!args.contains(&"h264_nvenc".to_string()));
         assert!(!args.contains(&"-c:v".to_string()));
         assert!(!args.contains(&"ddagrab".to_string())); // Video Input
+    }
+
+    #[test]
+    fn test_sanitize_preset() {
+        // NVENC
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_nvenc", "balanced"), "p4");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_nvenc", "speed"), "p2");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_nvenc", "quality"), "p6");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_nvenc", "p7"), "p7");
+
+        // AMF
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_amf", "p4"), "balanced");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_amf", "veryfast"), "speed");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_amf", "quality"), "quality");
+
+        // QSV
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_qsv", "p4"), "medium");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_qsv", "speed"), "veryfast");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("h264_qsv", "quality"), "veryslow");
+
+        // Software
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("libx264", "p4"), "veryfast");
+        assert_eq!(FfmpegCommandBuilder::sanitize_preset("libx264", "ultrafast"), "ultrafast");
+    }
+    #[test]
+    fn test_format_bridging_qsv() {
+        let builder = FfmpegCommandBuilder::new("output.mp4".to_string())
+            .with_video_codec("h264_qsv".to_string());
+        let args = builder.build();
+        
+        // Should contain filter complex or vf with hwmap
+        let has_filter = args.iter().any(|a| a.contains("hwmap=derive_device=qsv,format=qsv"));
+        assert!(has_filter, "QSV should have hwmap filter");
+    }
+
+    #[test]
+    fn test_format_bridging_software() {
+        let builder = FfmpegCommandBuilder::new("output.mp4".to_string())
+            .with_video_codec("libx264".to_string());
+        let args = builder.build();
+        
+        // Should contain filter complex or vf with hwdownload
+        let has_filter = args.iter().any(|a| a.contains("hwdownload,format=nv12"));
+        assert!(has_filter, "Software should have hwdownload filter");
+    }
+
+    #[test]
+    fn test_format_bridging_nvenc_native() {
+        let builder = FfmpegCommandBuilder::new("output.mp4".to_string())
+            .with_video_codec("h264_nvenc".to_string());
+        let args = builder.build();
+        
+        // Should NOT have bridging filters (native d3d11)
+        let has_map = args.iter().any(|a| a.contains("hwmap"));
+        let has_download = args.iter().any(|a| a.contains("hwdownload"));
+        assert!(!has_map && !has_download, "NVENC should not have bridging filters");
     }
 }

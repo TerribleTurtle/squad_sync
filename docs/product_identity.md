@@ -1,38 +1,36 @@
-# Product Identity & Naming
+# Product Identity: FluxReplay
 
 ## Core Concept
 
 **"Silent Recorder" + "Squad Sync"**
 
-- **Hook:** "See what your squad saw."
-- **Vibe:** Tactical, Professional, Lightweight, "Black Box".
+- **Name:** FluxReplay
+- **Domain:** `FluxReplay.com`
+- **Tagline:** "Every Angle. One Timeline."
+- **Vibe:** Tactical, Professional, Fluid, "Black Box".
 
-## Top Name Candidates
+## Design System
 
-### 1. Debrief (Primary Recommendation)
+### **Logo: "The Time Stack"**
 
-- **Concept:** The post-mission analysis. Fits the loop of "Play -> Review".
-- **Tagline:** "Squad up. Play hard. Debrief."
-- **Pros:** Strong gaming vernacular, professional, distinct from generic "recorders".
+- **Visual:** Three translucent, rounded squares stacked in 3D space, slightly offset from each other.
+- **Symbolism:**
+  - **Layers:** Represents multiple points of view (POVs) of the same event.
+  - **Depth:** Implies looking "deeper" into the match history.
+  - **Motion:** The offset stacking suggests forward momentum and the flow of time.
 
-### 2. SquadSight
+### **Color Palette**
 
-- **Concept:** Shared vision. Reference to XCOM mechanics.
-- **Tagline:** "Every POV. One Squad."
-- **Pros:** Directly describes the multi-POV feature. Very "gamer" focused.
+A modern, high-contrast palette designed for dark mode interfaces (gaming standard).
 
-### 3. BlackBox
+| Color Name        | Hex Code  | Usage                                                                                            |
+| :---------------- | :-------- | :----------------------------------------------------------------------------------------------- |
+| **Flux Blue**     | `#3B82F6` | Primary Brand Color. Used for the bottom/foundation layer. Represents stability and technology.  |
+| **Replay Orange** | `#F97316` | Accent Color. Used for the top/active layer. Represents action, highlights, and the "rec" state. |
+| **Deep Void**     | `#0F172A` | Background Color. A rich, dark blue-grey (Slate 900) that reduces eye strain.                    |
+| **Glass White**   | `#FFFFFF` | Used with opacity (10-30%) for the middle layer to create a glassmorphism effect.                |
 
-- **Concept:** The flight recorder that survives the crash.
-- **Tagline:** "Never miss a moment."
-- **Pros:** Emphasizes reliability and the "always-on" background nature.
+### **Typography**
 
-### 4. Parallax
-
-- **Concept:** Different angles of the same object.
-- **Pros:** High-tech, abstract, premium feel.
-
-### 5. Synchro
-
-- **Concept:** Synchronization.
-- **Pros:** Short, punchy, efficient.
+- **Header Font:** _Inter_ or _Outfit_ (Bold/ExtraBold). Modern, geometric sans-serif.
+- **Body Font:** _Inter_ (Regular). Clean and highly readable.

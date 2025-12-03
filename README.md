@@ -1,6 +1,6 @@
-# SquadSync
+# FluxReplay
 
-**SquadSync** is a distributed "Silent Recorder" for gaming squads. It captures high-quality gameplay locally and synchronizes clip generation across your entire squad, ensuring you never miss a moment from any perspective.
+**FluxReplay** is a distributed "Silent Recorder" for gaming squads. "Every Angle. One Timeline." It captures high-quality gameplay locally and synchronizes clip generation across your entire squad, ensuring you never miss a moment from any perspective.
 
 - **Desktop App**: [Tauri v2](https://v2.tauri.app/) (Rust + React)
 - **Signaling**: [PartyKit](https://partykit.io/) (Serverless WebSockets)

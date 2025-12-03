@@ -1,4 +1,4 @@
-# SquadSync Project Phases
+# FluxReplay Project Phases
 
 ## ✅ Completed Milestones
 
@@ -104,7 +104,20 @@
   - [x] Implement Signaling Error Handling
 - [ ] **Verification**
   - [x] Verify Room Connection (Multi-Client)
-  - [ ] Verify Error States (Disconnect/Reconnect)
+  - [x] Verify Error States (Disconnect/Reconnect)
+
+### **Phase 5.5: Rebranding to FluxReplay**
+
+**Goal:** Establish final product identity and assets.
+
+- [x] **Identity**
+  - [x] Rename project to **FluxReplay**
+  - [x] Create "Time Stack" Logo & Design System
+  - [x] Generate App Icons (.ico, .icns, .png)
+- [x] **Codebase Updates**
+  - [x] Update `tauri.conf.json` (Identifier/Title)
+  - [x] Update `package.json` & Documentation
+  - [x] Verify Build Health
 
 ---
 
@@ -119,11 +132,25 @@
   - [x] Implement basic clip management (Delete/Rename)
   - [x] Implement video thumbnails
 - [ ] **Cloud & Web Playback**
-  - [ ] Implement `concat_segments` FFmpeg command
-  - [ ] Implement R2 Upload (Presigned URLs)
+  - [x] Implement `concat_segments` FFmpeg command
+  - [x] Implement R2 Upload (Presigned URLs)
   - [ ] Implement `WebSquadGrid` (Canvas/Video)
   - [ ] Implement Leader/Follower Seek Sync
   - [ ] Verify frame-perfect playback synchronization
+
+### **Phase 7: MVP Production Infrastructure**
+
+**Goal:** Setup production environment for PartyKit and R2.
+
+- [ ] **Vercel CLI & Setup**
+  - [ ] Install Vercel CLI
+  - [ ] Configure Vercel Project
+- [ ] **PartyKit Production Setup**
+  - [ ] Create PartyKit Project
+  - [ ] Configure `partykit.json` for Production
+  - [ ] **Environment Variables**
+    - [ ] Add R2 Credentials to PartyKit Secrets (`partykit env add`)
+    - [ ] Configure CORS for Production
 
 ## 🔮 Future Roadmap (Post-MVP)
 
