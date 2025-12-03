@@ -12,13 +12,15 @@
 This project is a monorepo managed with `pnpm` and `turborepo`.
 
 - `apps/desktop`: The main desktop application (Tauri).
+- `apps/web`: The web application (Next.js) for homepage and playback.
 - `apps/signaling`: The WebSocket signaling server (PartyKit).
 - `packages/shared`: Shared TypeScript types, schemas, and constants.
 - `packages/ffmpeg-commands`: FFmpeg command builders and utilities.
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: React, TailwindCSS, Zustand
+- **Frontend (Web)**: Next.js, React, TailwindCSS
+- **Frontend (Desktop)**: React, TailwindCSS, Zustand
 - **Backend (Desktop)**: Rust (Tauri v2)
 - **Signaling**: PartyKit (Cloudflare Workers)
 - **Video Processing**: FFmpeg (Sidecar)
@@ -64,10 +66,20 @@ cd apps/desktop
 pnpm setup:ffmpeg
 cd ../..
 
-# 2. Build
+# 2. Build All
 pnpm build
-# OR specifically for desktop
+
+# 3. Build Specific App
 pnpm --filter desktop tauri build
+pnpm --filter web build
+```
+
+### Deployment
+
+- **Web App**: Deployed on Vercel (`apps/web`).
+- **Signaling**: Deployed on PartyKit (`apps/signaling`).
+- **Storage**: Cloudflare R2 (Public Access enabled).
+
 ```
 
 ### Development Workflow
@@ -87,3 +99,4 @@ pnpm --filter desktop tauri build
 ## 📄 License
 
 [ISC](LICENSE)
+```

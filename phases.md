@@ -134,7 +134,11 @@
 - [ ] **Cloud & Web Playback**
   - [x] Implement `concat_segments` FFmpeg command
   - [x] Implement R2 Upload (Presigned URLs)
-  - [ ] Implement `WebSquadGrid` (Canvas/Video)
+  - [x] Implement `WebSquadGrid` (Canvas/Video)
+    - [x] Scaffold `apps/web` (Next.js)
+    - [x] Implement Homepage (`page.tsx`)
+    - [x] Implement `WebSquadGrid` Component
+    - [x] Implement Room Page (`room/[id]`)
   - [ ] Implement Leader/Follower Seek Sync
   - [ ] Verify frame-perfect playback synchronization
 
@@ -142,15 +146,16 @@
 
 **Goal:** Setup production environment for PartyKit and R2.
 
-- [ ] **Vercel CLI & Setup**
-  - [ ] Install Vercel CLI
-  - [ ] Configure Vercel Project
-- [ ] **PartyKit Production Setup**
-  - [ ] Create PartyKit Project
-  - [ ] Configure `partykit.json` for Production
-  - [ ] **Environment Variables**
-    - [ ] Add R2 Credentials to PartyKit Secrets (`partykit env add`)
-    - [ ] Configure CORS for Production
+- [x] **Vercel CLI & Setup**
+  - [x] Install Vercel CLI
+  - [x] Configure Vercel Project (`apps/web`)
+  - [x] Configure `vercel.json` (Output Directory Fix)
+- [x] **PartyKit Production Setup**
+  - [x] Create PartyKit Project
+  - [x] Configure `partykit.json` for Production
+  - [x] **Environment Variables**
+    - [x] Add R2 Credentials to PartyKit Secrets (`partykit env add`)
+    - [x] Configure CORS for Production (R2 Dashboard)
 
 ## 🔮 Future Roadmap (Post-MVP)
 
