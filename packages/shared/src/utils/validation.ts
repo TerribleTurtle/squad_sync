@@ -24,7 +24,7 @@ export const TriggerClipSchema = z.object({
 export const UploadCompleteSchema = z.object({
   type: z.literal('UPLOAD_COMPLETE'),
   clipId: z.string(),
-  key: z.string(),
+  key: z.string().optional(),
 });
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [

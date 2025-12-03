@@ -89,6 +89,7 @@ export function useRecorder() {
             }
 
             console.log('✅ Upload Successful');
+
             setStatus('Upload Complete!');
             showToast('Clip Uploaded Successfully!', 'success');
           } catch (uploadErr) {

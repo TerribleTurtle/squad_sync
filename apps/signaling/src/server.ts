@@ -2,7 +2,7 @@ import type * as Party from 'partykit/server';
 import { RoomHandler } from './handlers/room';
 import { SyncHandler } from './handlers/sync';
 import { ClientMessageSchema, ClientMessage } from '@squadsync/shared';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { RateLimiter } from './lib/ratelimit';
@@ -27,7 +27,8 @@ export default class Server implements Party.Server {
 
   // Helper to get env vars safely (supports dev .env and prod secrets)
   private getEnv(key: string): string | undefined {
-    return (this.room.env[key] as string) || (process.env[key] as string);
+    const value = (this.room.env[key] as string) || (process.env[key] as string);
+    return value ? value.trim() : undefined;
   }
 
   private getS3Client(): S3Client | null {
@@ -49,7 +50,11 @@ export default class Server implements Party.Server {
         accessKeyId,
         secretAccessKey,
       },
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
+      forcePathStyle: true,
     });
+    console.log('✅ S3Client initialized');
     return this.s3Client;
   }
 
@@ -201,8 +206,38 @@ export default class Server implements Party.Server {
           console.log(`Clip ${clipId} triggered by ${sender.id}`);
           break;
         case 'UPLOAD_COMPLETE':
-          // TODO: Implement upload completion
-          console.log('Upload complete from', sender.id);
+          console.log('Upload complete from', sender.id, 'for clip', msg.clipId);
+          const s3Verify = this.getS3Client();
+          const bucketVerify = this.getEnv('R2_BUCKET_NAME');
+          const keyVerify = `uploads/${this.room.id}/${msg.clipId}.mp4`;
+
+          if (s3Verify && bucketVerify) {
+            try {
+              await s3Verify.send(
+                new HeadObjectCommand({
+                  Bucket: bucketVerify,
+                  Key: keyVerify,
+                })
+              );
+              console.log(`✅ File verified in R2: ${keyVerify}`);
+              sender.send(
+                JSON.stringify({
+                  type: 'ERROR', // Using ERROR type for now to show toast, or add a new SUCCESS type
+                  code: 'UPLOAD_VERIFIED',
+                  message: `File verified in R2: ${keyVerify}`,
+                })
+              );
+            } catch (err) {
+              console.error(`❌ File NOT found in R2: ${keyVerify}`, err);
+              sender.send(
+                JSON.stringify({
+                  type: 'ERROR',
+                  code: 'UPLOAD_VERIFICATION_FAILED',
+                  message: `File NOT found in R2: ${keyVerify}`,
+                })
+              );
+            }
+          }
           break;
       }
     } catch (e) {

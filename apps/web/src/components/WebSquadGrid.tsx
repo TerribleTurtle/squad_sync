@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Play, Pause, Volume2, VolumeX, Maximize2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Play, Pause, Volume2, VolumeX } from 'lucide-react';
 
 // Mock type if shared not available yet, or import
 // import { ClipMetadata } from "@squadsync/shared";
@@ -66,7 +66,7 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
                 else videoRefs.current.delete(clip.id);
               }}
               src={clip.url}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               muted={muted} // Start muted for autoplay policy
               onTimeUpdate={index === 0 ? handleTimeUpdate : undefined}
               playsInline

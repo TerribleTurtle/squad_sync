@@ -6,7 +6,7 @@ import { SquadList } from './SquadList';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 interface RoomManagerProps {
-  onClipStart?: (timestamp: number, uploadUrl?: string) => void;
+  onClipStart?: (timestamp: number, uploadUrl?: string, clipId?: string) => Promise<void>;
 }
 
 export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
@@ -32,7 +32,21 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
     isJoined ? roomId : '',
     userId,
     effectiveDisplayName,
-    onClipStart
+    async (timestamp, uploadUrl, clipId) => {
+      if (onClipStart) {
+        await onClipStart(timestamp, uploadUrl, clipId);
+
+        // If we have a clipId and uploadUrl, it means we attempted an upload.
+        // Notify server to verify.
+        if (clipId && uploadUrl && client) {
+          console.log('📤 Sending UPLOAD_COMPLETE for', clipId);
+          client.send({
+            type: 'UPLOAD_COMPLETE',
+            clipId,
+          });
+        }
+      }
+    }
   );
 
   const handleJoin = (id: string, name: string) => {

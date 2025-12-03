@@ -27,7 +27,7 @@ export interface TriggerClipMessage {
 export interface UploadCompleteMessage {
   type: 'UPLOAD_COMPLETE';
   clipId: string;
-  key: string;
+  key?: string;
 }
 
 export type ClientMessage =
