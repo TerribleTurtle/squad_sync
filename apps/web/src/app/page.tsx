@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Download, Play, Users, Zap } from 'lucide-react';
 
@@ -8,8 +9,14 @@ export default function Home() {
       <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-slate-950/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-              <Play size={16} className="fill-white" />
+            <div className="w-8 h-8 rounded-lg bg-indigo-600/20 flex items-center justify-center overflow-hidden">
+              <Image
+                src="/logo.png"
+                alt="FluxReplay Logo"
+                width={32}
+                height={32}
+                className="w-full h-full object-cover"
+              />
             </div>
             FluxReplay
           </div>
