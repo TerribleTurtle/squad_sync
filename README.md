@@ -19,8 +19,8 @@ This project is a monorepo managed with `pnpm` and `turborepo`.
 
 ## 🛠️ Tech Stack
 
-- **Frontend (Web)**: Next.js, React, TailwindCSS
-- **Frontend (Desktop)**: React, TailwindCSS, Zustand
+- **Frontend (Web)**: Next.js, React, TailwindCSS v4
+- **Frontend (Desktop)**: React, TailwindCSS v4, Zustand
 - **Backend (Desktop)**: Rust (Tauri v2)
 - **Signaling**: PartyKit (Cloudflare Workers)
 - **Video Processing**: FFmpeg (Sidecar)

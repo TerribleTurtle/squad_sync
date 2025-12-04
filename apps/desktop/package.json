@@ -35,16 +35,16 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
+    "@tailwindcss/postcss": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.2.1",
-    "autoprefixer": "^10.4.16",
     "ffbinaries": "^1.1.6",
     "jsdom": "^27.2.0",
     "postcss": "^8.4.32",
-    "tailwindcss": "^3.4.0",
+    "tailwindcss": "^4.0.0",
     "typescript": "^5.3.3",
     "vite": "^5.0.0",
     "vitest": "^4.0.14"

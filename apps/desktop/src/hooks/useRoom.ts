@@ -17,6 +17,7 @@ export function useRoom(
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<PartyKitClient | null>(null);
   const onClipStartRef = useRef(onClipStart);
+  const pendingClipRef = useRef<{ clipId: string; referenceTime: number } | null>(null);
 
   useEffect(() => {
     onClipStartRef.current = onClipStart;
@@ -54,8 +55,6 @@ export function useRoom(
       setError('Connection error occurred');
       console.error('PartyKit error:', err);
     });
-
-    const pendingClipRef = useRef<{ clipId: string; referenceTime: number } | null>(null);
 
     // Listen for messages
     const unsubMessage = client.onMessage((msg) => {
