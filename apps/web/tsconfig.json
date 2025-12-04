@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@squadsync/shared": ["../../packages/shared/dist/index.d.ts"]
     }
   },
   "include": [
