@@ -27,12 +27,6 @@ export default function Home() {
             <Link href="#download" className="hover:text-white transition-colors">
               Download
             </Link>
-            <Link
-              href="/login"
-              className="px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 text-white transition-colors"
-            >
-              Login
-            </Link>
           </div>
         </div>
       </nav>
@@ -60,9 +54,12 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button className="px-8 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-3 shadow-[0_0_40px_-10px_rgba(79,70,229,0.5)]">
+            <button
+              disabled
+              className="px-8 py-4 rounded-2xl bg-indigo-600/50 text-white/50 font-bold text-lg transition-all cursor-not-allowed flex items-center gap-3 shadow-none"
+            >
               <Download size={24} />
-              Download for Windows
+              Download Coming Soon
             </button>
             <button className="px-8 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-bold text-lg transition-all border border-white/10 flex items-center gap-3">
               View Demo Room
@@ -78,7 +75,7 @@ export default function Home() {
               </div>
               <h3 className="text-xl font-bold mb-3">Squad Sync</h3>
               <p className="text-slate-400 leading-relaxed">
-                Connect with your team. When one person clips, everyone clips. Automatically.
+                Connect with your team. Manually trigger a clip to sync with everyone.
               </p>
             </div>
             <div className="p-8 rounded-3xl bg-white/5 border border-white/5 hover:border-white/10 transition-colors">
