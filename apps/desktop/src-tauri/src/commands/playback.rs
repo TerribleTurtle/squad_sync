@@ -201,7 +201,7 @@ pub async fn generate_thumbnail(app: AppHandle, path: String) -> Result<String, 
 }
 
 #[tauri::command]
-#[allow(deprecated)]
+#[allow(deprecated)] // TODO: Migrate to tauri-plugin-opener
 pub async fn open_file<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     app.shell().open(path, None).map_err(|e| e.to_string())?;

@@ -1,11 +1,17 @@
 import type * as Party from 'partykit/server';
 import { RoomHandler } from './handlers/room';
 import { SyncHandler } from './handlers/sync';
-import { ClientMessageSchema, ClientMessage } from '@squadsync/shared';
+import { ClientMessageSchema, ClientMessage, View } from '@squadsync/shared';
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { RateLimiter } from './lib/ratelimit';
+
+interface ClipData {
+  id: string;
+  timestamp: number;
+  views: View[];
+}
 
 export default class Server implements Party.Server {
   private roomHandler: RoomHandler;
@@ -239,23 +245,21 @@ export default class Server implements Party.Server {
 
               // Update clip metadata
               const clipKey = `clip:${msg.clipId}`;
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const clipData: any = (await this.room.storage.get(clipKey)) || {
+              const clipData = (await this.room.storage.get<ClipData>(clipKey)) || {
                 id: msg.clipId,
                 timestamp: Date.now(),
                 views: [],
               };
 
               // Add or update this user's view
-              const view = {
+              const view: View = {
                 author: verifyUserId, // Using userId as author for now, could be display name
                 url: playbackUrl,
                 timestamp: Date.now(),
               };
 
               // Remove existing view from same author if any
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              clipData.views = (clipData.views || []).filter((v: any) => v.author !== verifyUserId);
+              clipData.views = (clipData.views || []).filter((v) => v.author !== verifyUserId);
               clipData.views.push(view);
 
               await this.room.storage.put(clipKey, clipData);

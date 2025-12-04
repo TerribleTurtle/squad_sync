@@ -85,7 +85,7 @@ export interface UploadUrlGrantedMessage {
 export interface View {
   author: string;
   url: string;
-  // Add other properties as needed based on usage in RoomClient.tsx
+  timestamp: number;
 }
 
 export interface ClipUpdatedMessage {

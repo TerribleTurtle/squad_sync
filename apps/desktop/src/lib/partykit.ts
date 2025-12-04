@@ -109,16 +109,20 @@ export class PartyKitClient {
     this.messageHandlers.forEach((handler) => handler(msg));
   }
 
-  private connectionHandlers: Set<{
-    type: 'connect' | 'disconnect' | 'error';
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-    handler: Function;
-  }> = new Set();
+  private connectionHandlers: Set<
+    | { type: 'connect'; handler: () => void }
+    | { type: 'disconnect'; handler: () => void }
+    | { type: 'error'; handler: (err: Event) => void }
+  > = new Set();
 
   private notifyConnectionHandlers(type: 'connect' | 'disconnect' | 'error', data?: unknown) {
     this.connectionHandlers.forEach((h) => {
       if (h.type === type) {
-        h.handler(data);
+        if (h.type === 'error') {
+          h.handler(data as Event);
+        } else {
+          h.handler();
+        }
       }
     });
   }
