@@ -27,7 +27,7 @@ function App() {
                 <Disc size={24} />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">SquadSync</h1>
+                <h1 className="text-xl font-bold text-white tracking-tight">FluxReplay</h1>
                 <div className="flex items-center gap-2 text-xs font-medium mt-0.5">
                   <span
                     className={`w-2 h-2 rounded-full transition-all duration-500 ${isReplayActive ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.6)] animate-pulse-soft' : isBuffering ? 'bg-amber-500 animate-pulse' : 'bg-slate-600'}`}

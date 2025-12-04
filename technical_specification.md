@@ -502,7 +502,7 @@ provider = "default" # default, custom
 
 ### **11.1 Overview**
 
-Plugins allow external code to interact with SquadSync, primarily for "Auto-Clip" functionality.
+Plugins allow external code to interact with FluxReplay, primarily for "Auto-Clip" functionality.
 
 ### **11.2 Directory Structure**
 

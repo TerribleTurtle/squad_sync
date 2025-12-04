@@ -73,7 +73,7 @@ export default function Home() {
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 mb-6">
                 <Users size={24} />
               </div>
-              <h3 className="text-xl font-bold mb-3">Squad Sync</h3>
+              <h3 className="text-xl font-bold mb-3">FluxReplay</h3>
               <p className="text-slate-400 leading-relaxed">
                 Connect with your team. Manually trigger a clip to sync with everyone.
               </p>
