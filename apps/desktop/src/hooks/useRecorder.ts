@@ -70,7 +70,7 @@ export function useRecorder() {
         if (uploadUrl && filePath) {
           try {
             setStatus('Uploading Clip...');
-            console.log(`📤 Uploading ${filePath} to ${uploadUrl}`);
+            console.info(`📤 Uploading ${filePath} to ${uploadUrl}`);
 
             // Read file
             const fileData = await readFile(filePath);
@@ -88,7 +88,7 @@ export function useRecorder() {
               throw new Error(`Upload failed: ${response.statusText}`);
             }
 
-            console.log('✅ Upload Successful');
+            console.info('✅ Upload Successful');
 
             setStatus('Upload Complete!');
             showToast('Clip Uploaded Successfully!', 'success');

@@ -39,7 +39,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
         // If we have a clipId and uploadUrl, it means we attempted an upload.
         // Notify server to verify.
         if (clipId && uploadUrl && client) {
-          console.log('📤 Sending UPLOAD_COMPLETE for', clipId);
+          console.info('📤 Sending UPLOAD_COMPLETE for', clipId);
           client.send({
             type: 'UPLOAD_COMPLETE',
             clipId,

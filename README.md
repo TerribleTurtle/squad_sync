@@ -77,21 +77,6 @@ pnpm --filter web build
 ### Deployment
 
 - **Web App**: Deployed on Vercel (`apps/web`).
-- **Signaling**: Deployed on PartyKit (`apps/signaling`).
-- **Storage**: Cloudflare R2 (Public Access enabled).
-
-```
-
-### Development Workflow
-
-- **Local CI**: Run `pnpm run ci` to execute build, lint, and typecheck locally.
-- **CI/CD**: GitHub Actions is configured for manual triggers only. Go to the "Actions" tab on GitHub to run the CI pipeline.
-
-## 📖 Documentation
-
-- [Technical Specification](technical_specification.md): Detailed system architecture and requirements.
-- [Developer Guide](developer_guide.md): Code patterns, standards, and examples.
-- [Phases & Roadmap](phases.md): High-level project roadmap.
 
 4.  Push to the branch (`git push origin feature/amazing-feature`).
 5.  Open a Pull Request.
@@ -99,4 +84,7 @@ pnpm --filter web build
 ## 📄 License
 
 [ISC](LICENSE)
+
+```
+
 ```

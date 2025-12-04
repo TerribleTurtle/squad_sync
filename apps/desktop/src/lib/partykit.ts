@@ -19,7 +19,7 @@ export class PartyKitClient {
       fullUrl: `${protocol || 'wss'}://${host}/party/${roomId}`,
     };
 
-    console.log('🔌 PartyKitClient initializing:', debugInfo);
+    console.info('🔌 PartyKitClient initializing:', debugInfo);
 
     // Show debug alert (remove after debugging)
     // alert(
@@ -34,12 +34,12 @@ export class PartyKitClient {
     });
 
     this.socket.addEventListener('open', () => {
-      console.log('✅ PartySocket connected');
+      console.info('✅ PartySocket connected');
       this.notifyConnectionHandlers('connect');
     });
 
     this.socket.addEventListener('close', (event) => {
-      console.log('❌ PartySocket disconnected:', event);
+      console.info('❌ PartySocket disconnected:', event);
       this.notifyConnectionHandlers('disconnect');
     });
 
@@ -111,10 +111,11 @@ export class PartyKitClient {
 
   private connectionHandlers: Set<{
     type: 'connect' | 'disconnect' | 'error';
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     handler: Function;
   }> = new Set();
 
-  private notifyConnectionHandlers(type: 'connect' | 'disconnect' | 'error', data?: any) {
+  private notifyConnectionHandlers(type: 'connect' | 'disconnect' | 'error', data?: unknown) {
     this.connectionHandlers.forEach((h) => {
       if (h.type === type) {
         h.handler(data);

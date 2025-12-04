@@ -19,6 +19,18 @@
     "typecheck": {
       "dependsOn": ["^build"]
     },
+    "check:rust": {
+      "cache": false
+    },
+    "lint:rust": {
+      "cache": false
+    },
+    "test": {
+      "dependsOn": ["^build"]
+    },
+    "test:rust": {
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true

@@ -18,8 +18,8 @@ interface SettingsState {
   setSaving: (saving: boolean) => void;
 
   // Actions to update specific parts of config
-  updateUserConfig: (key: string, value: any) => void;
-  updateRecordingConfig: (key: string, value: any) => void;
+  updateUserConfig: (key: string, value: unknown) => void;
+  updateRecordingConfig: (key: string, value: unknown) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({

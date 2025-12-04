@@ -26,7 +26,7 @@ const Section = ({
   children,
 }: {
   title: string;
-  icon: any;
+  icon: React.ElementType;
   children: React.ReactNode;
 }) => (
   <div className="bg-white/5 rounded-2xl p-6 border border-white/5 space-y-4">
@@ -50,7 +50,7 @@ const Select = ({
   value: string | number;
   onChange: (val: string) => void;
   options: { label: string; value: string | number }[];
-  icon?: any;
+  icon?: React.ElementType;
   tooltip?: string;
 }) => (
   <div className="space-y-2">

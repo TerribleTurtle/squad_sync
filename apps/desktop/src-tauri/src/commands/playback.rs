@@ -35,8 +35,7 @@ pub async fn get_recordings(app: AppHandle) -> Result<Vec<Recording>, String> {
     let mut recordings = Vec::new();
     let entries = fs::read_dir(&output_path).map_err(|e| e.to_string())?;
 
-    for entry in entries {
-        if let Ok(entry) = entry {
+    for entry in entries.flatten() {
             log::debug!("Found entry: {:?}", entry.path());
             let path = entry.path();
             if path.is_file() {
@@ -50,7 +49,7 @@ pub async fn get_recordings(app: AppHandle) -> Result<Vec<Recording>, String> {
                             .unwrap_or_default()
                             .as_secs();
 
-                        let thumbnail_path = output_path.join(".thumbnails").join(format!("{}.jpg", path.file_name().unwrap_or_default().to_string_lossy()));
+                        let thumbnail_path = output_path.join(".thumbnails").join(format!("{}.jpg", path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy()));
                         let thumbnail_path_str = if thumbnail_path.exists() {
                             Some(thumbnail_path.to_string_lossy().to_string())
                         } else {
@@ -58,7 +57,7 @@ pub async fn get_recordings(app: AppHandle) -> Result<Vec<Recording>, String> {
                         };
 
                         recordings.push(Recording {
-                            name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                            name: path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy().into_owned(),
                             path: path.to_string_lossy().to_string(),
                             thumbnail_path: thumbnail_path_str,
                             size: metadata.len(),
@@ -69,7 +68,7 @@ pub async fn get_recordings(app: AppHandle) -> Result<Vec<Recording>, String> {
                 }
             }
         }
-    }
+
 
     // Sort by created_at desc
     recordings.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -161,7 +160,7 @@ pub async fn generate_thumbnail(app: AppHandle, path: String) -> Result<String, 
         }
     }
 
-    let thumbnail_filename = format!("{}.jpg", video_path.file_name().unwrap_or_default().to_string_lossy());
+    let thumbnail_filename = format!("{}.jpg", video_path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy());
     let thumbnail_path = thumbnails_dir.join(&thumbnail_filename);
 
     if thumbnail_path.exists() {
@@ -202,6 +201,7 @@ pub async fn generate_thumbnail(app: AppHandle, path: String) -> Result<String, 
 }
 
 #[tauri::command]
+#[allow(deprecated)]
 pub async fn open_file<R: Runtime>(app: AppHandle<R>, path: String) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     app.shell().open(path, None).map_err(|e| e.to_string())?;

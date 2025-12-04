@@ -24,12 +24,12 @@ export function useRoom(
 
   useEffect(() => {
     if (!roomId || !userId) {
-      console.log('⚠️ useRoom: Missing roomId or userId', { roomId, userId });
+      console.info('⚠️ useRoom: Missing roomId or userId', { roomId, userId });
       setConnectionState('disconnected');
       return;
     }
 
-    console.log('🔄 useRoom: Initializing connection', { roomId, userId });
+    console.info('🔄 useRoom: Initializing connection', { roomId, userId });
     setConnectionState('connecting');
     setError(null);
 
@@ -38,13 +38,13 @@ export function useRoom(
 
     // Connection handlers
     const unsubConnect = client.onConnect(() => {
-      console.log('✅ useRoom: Connected');
+      console.info('✅ useRoom: Connected');
       setConnectionState('connected');
       setError(null);
     });
 
     const unsubDisconnect = client.onDisconnect(() => {
-      console.log('❌ useRoom: Disconnected');
+      console.info('❌ useRoom: Disconnected');
       setConnectionState('disconnected');
     });
 
@@ -96,12 +96,12 @@ export function useRoom(
           });
           break;
         case 'START_CLIP':
-          console.log('🎥 START_CLIP received:', msg);
+          console.info('🎥 START_CLIP received:', msg);
           // Store reference time and request upload URL
           pendingClipRef.current = { clipId: msg.clipId, referenceTime: msg.referenceTime };
 
           if (clientRef.current) {
-            console.log('📤 Requesting upload URL for clip:', msg.clipId);
+            console.info('📤 Requesting upload URL for clip:', msg.clipId);
             clientRef.current.send({
               type: 'REQUEST_UPLOAD_URL',
               clipId: msg.clipId,
@@ -109,7 +109,7 @@ export function useRoom(
           }
           break;
         case 'UPLOAD_URL_GRANTED':
-          console.log('✅ UPLOAD_URL_GRANTED received:', msg);
+          console.info('✅ UPLOAD_URL_GRANTED received:', msg);
           if (pendingClipRef.current && pendingClipRef.current.clipId === msg.clipId) {
             // Now trigger the actual recording/upload
             onClipStartRef.current?.(
@@ -145,7 +145,7 @@ export function useRoom(
   // Separate effect for joining/updating user info
   useEffect(() => {
     if (connectionState === 'connected' && clientRef.current) {
-      console.log('Sending JOIN_ROOM with name:', displayName);
+      console.info('Sending JOIN_ROOM with name:', displayName);
       clientRef.current.send({
         type: 'JOIN_ROOM',
         roomId,

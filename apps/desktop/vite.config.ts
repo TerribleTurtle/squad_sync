@@ -4,11 +4,11 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
-  console.log('🔍 Current Working Directory:', process.cwd());
+  console.info('🔍 Current Working Directory:', process.cwd());
   const env = loadEnv(mode, process.cwd(), '');
-  console.log('🔍 Vite Mode:', mode);
-  console.log('🔍 Loaded Env:', JSON.stringify(env, null, 2));
-  console.log('🔍 VITE_PARTYKIT_HOST:', env.VITE_PARTYKIT_HOST);
+  console.info('🔍 Vite Mode:', mode);
+  console.info('🔍 Loaded Env:', JSON.stringify(env, null, 2));
+  console.info('🔍 VITE_PARTYKIT_HOST:', env.VITE_PARTYKIT_HOST);
 
   return {
     plugins: [react()],

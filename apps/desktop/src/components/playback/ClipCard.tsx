@@ -91,7 +91,7 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
     }
   };
 
-  const handleRename = async (e: React.MouseEvent) => {
+  const handleRename = async (e: React.SyntheticEvent) => {
     e.stopPropagation();
     if (!newName.trim() || newName === recording.name) {
       setIsRenaming(false);
@@ -152,7 +152,7 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
                 className="flex-1 bg-slate-900 border border-indigo-500/50 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleRename(e as any);
+                  if (e.key === 'Enter') handleRename(e);
                   if (e.key === 'Escape') {
                     setIsRenaming(false);
                     setNewName(recording.name);

@@ -858,6 +858,7 @@ mod tests {
     fn test_builder_resolution_edge_cases() {
         // Case 1: "Native" mixed case
         let builder = FfmpegCommandBuilder::new("output.mp4".to_string())
+            .with_video_codec("h264_nvenc".to_string()) // Explicitly set HW codec to avoid format bridging filters
             .with_resolution(Some("Native".to_string()));
         let args = builder.build();
         
@@ -868,6 +869,7 @@ mod tests {
 
         // Case 2: Invalid resolution string
         let builder2 = FfmpegCommandBuilder::new("output.mp4".to_string())
+            .with_video_codec("h264_nvenc".to_string()) // Explicitly set HW codec
             .with_resolution(Some("invalid".to_string()));
         let args2 = builder2.build();
         
