@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import PartySocket from 'partysocket';
 
 import { View } from '@squadsync/shared';
+import { logger } from '@/lib/logger';
 
 interface RoomClientProps {
   roomId: string;
@@ -42,7 +43,7 @@ export default function RoomClient({ roomId }: RoomClientProps) {
 
     socket.addEventListener('message', (event) => {
       const msg = JSON.parse(event.data);
-      console.log('Web Client received:', msg);
+      logger.info('Web Client received:', msg);
 
       if (msg.type === 'CLIP_LIST') {
         setRawClips(msg.clips);

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { AppConfig } from '../types/config';
 import { useToastStore } from '../stores/toastStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { logger } from '../lib/logger';
 
 export interface MonitorInfo {
   id: number;
@@ -38,7 +39,7 @@ export function useSettings() {
       store.setSystemAudioDevices(systemDevices);
       store.setMonitors(monitorList);
     } catch (e) {
-      console.error('Failed to load settings:', e);
+      logger.error('Failed to load settings:', e);
     } finally {
       store.setLoading(false);
     }
@@ -52,7 +53,7 @@ export function useSettings() {
       await invoke('update_config', { newConfig: store.config });
       showToast('Settings saved successfully!', 'success');
     } catch (e) {
-      console.error('Failed to save settings:', e);
+      logger.error('Failed to save settings:', e);
       showToast(`Error saving settings: ${e}`, 'error');
     } finally {
       store.setSaving(false);

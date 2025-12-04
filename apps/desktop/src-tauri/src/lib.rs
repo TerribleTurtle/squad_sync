@@ -1,5 +1,5 @@
 use tauri::Manager;
-use std::os::windows::process::CommandExt;
+
 
 pub mod ffmpeg;
 pub mod commands;
@@ -88,20 +88,7 @@ pub fn run() {
           let _ = std::fs::create_dir_all(&buffer_dir);
       }
 
-      // Set High Priority for the main process
-      let pid = std::process::id();
-      std::thread::spawn(move || {
-          const CREATE_NO_WINDOW: u32 = 0x08000000;
-          let _ = std::process::Command::new("powershell")
-              .args([
-                  "-NoProfile", 
-                  "-Command", 
-                  &format!("Get-Process -Id {} | ForEach-Object {{ $_.PriorityClass = 'High' }}", pid)
-              ])
-              .creation_flags(CREATE_NO_WINDOW)
-              .output();
-          log::info!("Set Main Process (PID: {}) to High Priority", pid);
-      });
+
 
       // Register Global Shortcut
       use tauri_plugin_global_shortcut::GlobalShortcutExt;

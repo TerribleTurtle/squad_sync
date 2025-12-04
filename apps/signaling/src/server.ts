@@ -1,7 +1,7 @@
 import type * as Party from 'partykit/server';
 import { RoomHandler } from './handlers/room';
 import { SyncHandler } from './handlers/sync';
-import { ClientMessageSchema, ClientMessage, View } from '@squadsync/shared';
+import { ClientMessageSchema, ClientMessage, View, Logger } from '@squadsync/shared';
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -18,6 +18,7 @@ export default class Server implements Party.Server {
   private syncHandler: SyncHandler;
   private rateLimiter: RateLimiter;
   private s3Client: S3Client | null = null;
+  private logger: Logger;
 
   // Map connection ID to User ID for disconnect handling
   private connToUser: Map<string, string> = new Map();
@@ -29,6 +30,7 @@ export default class Server implements Party.Server {
     this.roomHandler = new RoomHandler(room);
     this.syncHandler = new SyncHandler();
     this.rateLimiter = new RateLimiter();
+    this.logger = new Logger({ service: 'SignalingServer' });
   }
 
   // Helper to get env vars safely (supports dev .env and prod secrets)
@@ -45,7 +47,7 @@ export default class Server implements Party.Server {
     const accountId = this.getEnv('R2_ACCOUNT_ID');
 
     if (!accessKeyId || !secretAccessKey || !accountId) {
-      console.error('❌ Missing R2 Environment Variables');
+      this.logger.error('❌ Missing R2 Environment Variables');
       return null;
     }
 
@@ -60,7 +62,7 @@ export default class Server implements Party.Server {
       responseChecksumValidation: 'WHEN_REQUIRED',
       forcePathStyle: true,
     });
-    console.info('✅ S3Client initialized');
+    this.logger.info('✅ S3Client initialized');
     return this.s3Client;
   }
 
@@ -71,11 +73,11 @@ export default class Server implements Party.Server {
     for (const key of stored.keys()) {
       await this.room.storage.delete(key);
     }
-    console.info(`Cleared ${stored.size} items from storage on start`);
+    this.logger.info(`Cleared ${stored.size} items from storage on start`);
   }
 
   async onConnect(conn: Party.Connection, _ctx: Party.ConnectionContext) {
-    console.info(`Connected: ${conn.id} to room ${this.room.id}`);
+    this.logger.info(`Connected: ${conn.id} to room ${this.room.id}`);
 
     // Send existing clips to new connection
     const clips = await this.room.storage.list<unknown>();
@@ -102,7 +104,7 @@ export default class Server implements Party.Server {
       const result = ClientMessageSchema.safeParse(parsed);
 
       if (!result.success) {
-        console.error('Invalid message:', result.error);
+        this.logger.error('Invalid message:', result.error);
         return;
       }
 
@@ -110,7 +112,7 @@ export default class Server implements Party.Server {
 
       // Check Rate Limit
       if (!this.rateLimiter.checkLimit(sender.id, msg.type)) {
-        console.warn(`Rate limit exceeded for ${sender.id} on ${msg.type}`);
+        this.logger.warn(`Rate limit exceeded for ${sender.id} on ${msg.type}`);
         sender.send(
           JSON.stringify({
             type: 'ERROR',
@@ -126,7 +128,7 @@ export default class Server implements Party.Server {
           // Cancel any pending disconnect for this user
           const pendingTimeout = this.pendingDisconnects.get(msg.userId);
           if (pendingTimeout) {
-            console.info(`Cancelling pending disconnect for ${msg.userId}`);
+            this.logger.info(`Cancelling pending disconnect for ${msg.userId}`);
             clearTimeout(pendingTimeout);
             this.pendingDisconnects.delete(msg.userId);
           }
@@ -177,7 +179,7 @@ export default class Server implements Party.Server {
           });
 
           this.room.broadcast(JSON.stringify(startClipMsg));
-          console.info(`Clip ${clipId} triggered by ${sender.id}`);
+          this.logger.info(`Clip ${clipId} triggered by ${sender.id}`);
           break;
         }
 
@@ -200,7 +202,7 @@ export default class Server implements Party.Server {
               });
 
               const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
-              console.info(`✅ Generated Presigned URL for ${key}`);
+              this.logger.info(`✅ Generated Presigned URL for ${key}`);
 
               sender.send(
                 JSON.stringify({
@@ -211,7 +213,7 @@ export default class Server implements Party.Server {
                 })
               );
             } catch (err) {
-              console.error('❌ Failed to generate presigned URL:', err);
+              this.logger.error('❌ Failed to generate presigned URL:', err);
               sender.send(
                 JSON.stringify({
                   type: 'ERROR',
@@ -225,7 +227,7 @@ export default class Server implements Party.Server {
         }
 
         case 'UPLOAD_COMPLETE': {
-          console.info('Upload complete from', sender.id, 'for clip', msg.clipId);
+          this.logger.info('Upload complete from', sender.id, 'for clip', msg.clipId);
           const s3Verify = this.getS3Client();
           const bucketVerify = this.getEnv('R2_BUCKET_NAME');
           const verifyUserId = this.connToUser.get(sender.id);
@@ -241,7 +243,7 @@ export default class Server implements Party.Server {
                   Key: keyVerify,
                 })
               );
-              console.info(`✅ File verified in R2: ${keyVerify}`);
+              this.logger.info(`✅ File verified in R2: ${keyVerify}`);
 
               // Update clip metadata
               const clipKey = `clip:${msg.clipId}`;
@@ -281,7 +283,7 @@ export default class Server implements Party.Server {
                 })
               );
             } catch (err) {
-              console.error(`❌ File NOT found in R2: ${keyVerify}`, err);
+              this.logger.error(`❌ File NOT found in R2: ${keyVerify}`, err);
               sender.send(
                 JSON.stringify({
                   type: 'ERROR',
@@ -295,12 +297,12 @@ export default class Server implements Party.Server {
         }
       }
     } catch (e) {
-      console.error('Error processing message:', e);
+      this.logger.error('Error processing message:', e);
     }
   }
 
   async onClose(conn: Party.Connection) {
-    console.info(`Disconnected: ${conn.id}`);
+    this.logger.info(`Disconnected: ${conn.id}`);
     let userId = this.connToUser.get(conn.id);
 
     if (!userId) {
@@ -310,7 +312,7 @@ export default class Server implements Party.Server {
 
     if (userId) {
       // Don't leave immediately. Wait 10s to see if they reconnect.
-      console.info(`Scheduling disconnect for ${userId} in 10s`);
+      this.logger.info(`Scheduling disconnect for ${userId} in 10s`);
 
       // Clear any existing timeout for this user just in case
       const existing = this.pendingDisconnects.get(userId);
@@ -319,7 +321,7 @@ export default class Server implements Party.Server {
       const timeout = setTimeout(async () => {
         if (!userId) return; // Should not happen due to closure, but safe check
 
-        console.info(`Executing delayed disconnect for ${userId}`);
+        this.logger.info(`Executing delayed disconnect for ${userId}`);
         await this.roomHandler.handleLeave(conn, userId);
         this.connToUser.delete(conn.id);
         await this.room.storage.delete(`conn:${conn.id}`);

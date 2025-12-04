@@ -1,5 +1,6 @@
 import PartySocket from 'partysocket';
 import { ClientMessage, ServerMessage, ClientMessageSchema } from '@squadsync/shared';
+import { logger } from './logger';
 
 export class PartyKitClient {
   private socket: PartySocket;
@@ -19,7 +20,7 @@ export class PartyKitClient {
       fullUrl: `${protocol || 'wss'}://${host}/party/${roomId}`,
     };
 
-    console.info('🔌 PartyKitClient initializing:', debugInfo);
+    logger.info('🔌 PartyKitClient initializing:', debugInfo);
 
     // Show debug alert (remove after debugging)
     // alert(
@@ -34,17 +35,17 @@ export class PartyKitClient {
     });
 
     this.socket.addEventListener('open', () => {
-      console.info('✅ PartySocket connected');
+      logger.info('✅ PartySocket connected');
       this.notifyConnectionHandlers('connect');
     });
 
     this.socket.addEventListener('close', (event) => {
-      console.info('❌ PartySocket disconnected:', event);
+      logger.info('❌ PartySocket disconnected:', event);
       this.notifyConnectionHandlers('disconnect');
     });
 
     this.socket.addEventListener('error', (err) => {
-      console.error('🔥 PartySocket error:', err);
+      logger.error('🔥 PartySocket error:', err);
       this.notifyConnectionHandlers('error', err);
     });
 
@@ -54,7 +55,7 @@ export class PartyKitClient {
         // We trust the server, but could validate here too
         this.notifyHandlers(data as ServerMessage);
       } catch (e) {
-        console.error('Failed to parse server message', e);
+        logger.error('Failed to parse server message', e);
       }
     });
   }
@@ -63,7 +64,7 @@ export class PartyKitClient {
     // Validate outgoing messages
     const result = ClientMessageSchema.safeParse(message);
     if (!result.success) {
-      console.error('Invalid client message', result.error);
+      logger.error('Invalid client message', result.error);
       return;
     }
     this.socket.send(JSON.stringify(message));

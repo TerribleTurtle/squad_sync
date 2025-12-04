@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { PartyKitClient } from '../lib/partykit';
+import { logger } from '../lib/logger';
 import { RoomState, RoomMember } from '@squadsync/shared';
 import { PARTYKIT_HOST } from '../lib/constants';
 import { useToastStore } from '../stores/toastStore';
@@ -25,12 +26,12 @@ export function useRoom(
 
   useEffect(() => {
     if (!roomId || !userId) {
-      console.info('⚠️ useRoom: Missing roomId or userId', { roomId, userId });
+      logger.info('⚠️ useRoom: Missing roomId or userId', { roomId, userId });
       setConnectionState('disconnected');
       return;
     }
 
-    console.info('🔄 useRoom: Initializing connection', { roomId, userId });
+    logger.info('🔄 useRoom: Initializing connection', { roomId, userId });
     setConnectionState('connecting');
     setError(null);
 
@@ -39,21 +40,21 @@ export function useRoom(
 
     // Connection handlers
     const unsubConnect = client.onConnect(() => {
-      console.info('✅ useRoom: Connected');
+      logger.info('✅ useRoom: Connected');
       setConnectionState('connected');
       setError(null);
     });
 
     const unsubDisconnect = client.onDisconnect(() => {
-      console.info('❌ useRoom: Disconnected');
+      logger.info('❌ useRoom: Disconnected');
       setConnectionState('disconnected');
     });
 
     const unsubError = client.onError((err) => {
-      console.error('🔥 useRoom: Connection error', err);
+      logger.error('🔥 useRoom: Connection error', err);
       setConnectionState('error');
       setError('Connection error occurred');
-      console.error('PartyKit error:', err);
+      logger.error('PartyKit error:', err);
     });
 
     // Listen for messages
@@ -95,12 +96,12 @@ export function useRoom(
           });
           break;
         case 'START_CLIP':
-          console.info('🎥 START_CLIP received:', msg);
+          logger.info('🎥 START_CLIP received:', msg);
           // Store reference time and request upload URL
           pendingClipRef.current = { clipId: msg.clipId, referenceTime: msg.referenceTime };
 
           if (clientRef.current) {
-            console.info('📤 Requesting upload URL for clip:', msg.clipId);
+            logger.info('📤 Requesting upload URL for clip:', msg.clipId);
             clientRef.current.send({
               type: 'REQUEST_UPLOAD_URL',
               clipId: msg.clipId,
@@ -108,7 +109,7 @@ export function useRoom(
           }
           break;
         case 'UPLOAD_URL_GRANTED':
-          console.info('✅ UPLOAD_URL_GRANTED received:', msg);
+          logger.info('✅ UPLOAD_URL_GRANTED received:', msg);
           if (pendingClipRef.current && pendingClipRef.current.clipId === msg.clipId) {
             // Now trigger the actual recording/upload
             onClipStartRef.current?.(
@@ -118,11 +119,11 @@ export function useRoom(
             );
             pendingClipRef.current = null;
           } else {
-            console.warn('⚠️ Received UPLOAD_URL_GRANTED for unknown or stale clip:', msg.clipId);
+            logger.warn('⚠️ Received UPLOAD_URL_GRANTED for unknown or stale clip:', msg.clipId);
           }
           break;
         case 'ERROR':
-          console.error('❌ Signaling Error:', msg);
+          logger.error('❌ Signaling Error:', msg);
           setError(`[${msg.code}] ${msg.message}`);
           setConnectionState('error');
           useToastStore.getState().showToast(`Signaling Error: ${msg.message}`, 'error');
@@ -144,7 +145,7 @@ export function useRoom(
   // Separate effect for joining/updating user info
   useEffect(() => {
     if (connectionState === 'connected' && clientRef.current) {
-      console.info('Sending JOIN_ROOM with name:', displayName);
+      logger.info('Sending JOIN_ROOM with name:', displayName);
       clientRef.current.send({
         type: 'JOIN_ROOM',
         roomId,

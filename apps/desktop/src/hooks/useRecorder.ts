@@ -5,6 +5,7 @@ import { fetch } from '@tauri-apps/plugin-http';
 import { useRecordingStore } from '../stores/recordingStore';
 import { useToastStore } from '../stores/toastStore';
 import { REPLAY_BUFFER_DELAY, CLIP_SAVE_DELAY } from '@squadsync/shared';
+import { logger } from '../lib/logger';
 
 export function useRecorder() {
   const { status, isReplayActive, isBuffering, setStatus, setReplayActive, setBuffering } =
@@ -70,7 +71,7 @@ export function useRecorder() {
         if (uploadUrl && filePath) {
           try {
             setStatus('Uploading Clip...');
-            console.info(`📤 Uploading ${filePath} to ${uploadUrl}`);
+            logger.info(`📤 Uploading ${filePath} to ${uploadUrl}`);
 
             // Read file
             const fileData = await readFile(filePath);
@@ -88,12 +89,12 @@ export function useRecorder() {
               throw new Error(`Upload failed: ${response.statusText}`);
             }
 
-            console.info('✅ Upload Successful');
+            logger.info('✅ Upload Successful');
 
             setStatus('Upload Complete!');
             showToast('Clip Uploaded Successfully!', 'success');
           } catch (uploadErr) {
-            console.error('Upload Error:', uploadErr);
+            logger.error('Upload Error:', uploadErr);
             showToast(`Upload Failed: ${uploadErr}`, 'error');
             // Don't fail the whole operation, just the upload
           }

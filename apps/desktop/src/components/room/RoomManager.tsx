@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRoom } from '../../hooks/useRoom';
 import { useSettings } from '../../hooks/useSettings';
+import { logger } from '../../lib/logger';
 import { JoinRoom } from './JoinRoom';
 import { SquadList } from './SquadList';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -39,7 +40,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
         // If we have a clipId and uploadUrl, it means we attempted an upload.
         // Notify server to verify.
         if (clipId && uploadUrl && client) {
-          console.info('📤 Sending UPLOAD_COMPLETE for', clipId);
+          logger.info('📤 Sending UPLOAD_COMPLETE for', clipId);
           client.send({
             type: 'UPLOAD_COMPLETE',
             clipId,

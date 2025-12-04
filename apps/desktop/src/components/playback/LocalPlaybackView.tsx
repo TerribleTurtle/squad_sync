@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Search, RefreshCw, FolderOpen } from 'lucide-react';
 import { ClipCard } from './ClipCard';
+import { logger } from '../../lib/logger';
 
 interface Recording {
   name: string;
@@ -32,12 +33,12 @@ export function LocalPlaybackView() {
               prev.map((p) => (p.path === rec.path ? { ...p, thumbnail_path: thumbPath } : p))
             );
           } catch (e) {
-            console.error('Failed to generate thumbnail for', rec.name, e);
+            logger.error('Failed to generate thumbnail for', rec.name, e);
           }
         }
       });
     } catch (error) {
-      console.error('Failed to fetch recordings:', error);
+      logger.error('Failed to fetch recordings:', error);
     } finally {
       if (showLoading) setIsLoading(false);
     }

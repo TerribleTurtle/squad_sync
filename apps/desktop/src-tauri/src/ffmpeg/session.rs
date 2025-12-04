@@ -2,9 +2,8 @@
 //! 
 //! This module manages the active FFmpeg child process. It handles:
 //! 1. Spawning the process with arguments from [crate::ffmpeg::commands::FfmpegCommandBuilder].
-//! 2. Setting process priority.
-//! 3. Monitoring output via [crate::ffmpeg::monitor::FfmpegMonitor].
-//! 4. Handling graceful shutdown and cleanup.
+//! 2. Monitoring output via [crate::ffmpeg::monitor::FfmpegMonitor].
+//! 3. Handling graceful shutdown and cleanup.
 
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -237,19 +236,7 @@ impl RecordingSession {
                 info!("Written sync metadata to {:?}", metadata_path);
             }
 
-            // 6. Set High Priority (Both)
-            thread::spawn(move || {
-                thread::sleep(Duration::from_millis(100));
-                let _ = std::process::Command::new("powershell")
-                    .args([
-                        "-NoProfile", 
-                        "-Command", 
-                        &format!("Get-Process -Id {}, {} | ForEach-Object {{ $_.PriorityClass = 'High' }}", video_pid, audio_pid)
-                    ])
-                    .creation_flags(0x08000000)
-                    .output();
-                info!("Set FFmpeg PIDs {}, {} to High Priority", video_pid, audio_pid);
-            });
+
 
             // 7. Start Monitor (Video & Audio)
             FfmpegMonitor::start(video_rx, Some(config.video_bitrate.clone()), "🔴 REC".to_string());

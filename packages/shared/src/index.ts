@@ -8,3 +8,4 @@ export * from './constants/defaults';
 export * from './constants/ui';
 export * from './utils/time';
 export * from './utils/validation';
+export * from './utils/logger';

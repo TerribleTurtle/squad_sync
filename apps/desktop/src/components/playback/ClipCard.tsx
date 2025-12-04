@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { readFile } from '@tauri-apps/plugin-fs';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { formatDistanceToNow } from 'date-fns';
+import { logger } from '../../lib/logger';
 
 interface Recording {
   name: string;
@@ -38,7 +39,7 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
             setThumbnailUrl(url);
           }
         } catch (error) {
-          console.error('Failed to load thumbnail:', error);
+          logger.error('Failed to load thumbnail:', error);
         }
       }
     };
@@ -61,7 +62,7 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
     try {
       await invoke('open_file', { path: recording.path });
     } catch (error) {
-      console.error('Failed to open file:', error);
+      logger.error('Failed to open file:', error);
     }
   };
 
@@ -70,7 +71,7 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
     try {
       await invoke('show_in_folder', { path: recording.path });
     } catch (error) {
-      console.error('Failed to show in folder:', error);
+      logger.error('Failed to show in folder:', error);
     }
   };
 
@@ -86,7 +87,7 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
         await invoke('delete_recording', { path: recording.path });
         onDelete();
       } catch (error) {
-        console.error('Failed to delete recording:', error);
+        logger.error('Failed to delete recording:', error);
       }
     }
   };
@@ -104,7 +105,7 @@ export function ClipCard({ recording, onDelete, onRename }: ClipCardProps) {
       setIsRenaming(false);
       onRename();
     } catch (error) {
-      console.error('Failed to rename recording:', error);
+      logger.error('Failed to rename recording:', error);
       alert('Failed to rename recording: ' + error);
     }
   };
