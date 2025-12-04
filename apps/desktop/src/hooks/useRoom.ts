@@ -122,6 +122,10 @@ export function useRoom(
             logger.warn('⚠️ Received UPLOAD_URL_GRANTED for unknown or stale clip:', msg.clipId);
           }
           break;
+        case 'UPLOAD_VERIFIED':
+          logger.info('✅ Upload Verified:', msg);
+          useToastStore.getState().showToast(msg.message, 'success');
+          break;
         case 'ERROR':
           logger.error('❌ Signaling Error:', msg);
           setError(`[${msg.code}] ${msg.message}`);

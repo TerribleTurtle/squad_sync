@@ -121,4 +121,11 @@ export type ServerMessage =
   | ClipUpdatedMessage
   | ClipReadyMessage
   | AllClipsReadyMessage
+  | UploadVerifiedMessage
   | ErrorMessage;
+
+export interface UploadVerifiedMessage {
+  type: 'UPLOAD_VERIFIED';
+  code: string;
+  message: string;
+}

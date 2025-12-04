@@ -177,3 +177,4 @@
   - [ ] Restrict `ffmpeg` execution arguments or use a sidecar wrapper.
 - [ ] **Built-in Video Player**: Custom player with scrubbing, volume control, and trimming.
 - [ ] **Fix Upload Race Condition**: Handle multiple concurrent clip uploads (Map-based tracking).
+- [ ] **Permanent Demo Room**: Hardcoded clips for demonstration purposes.

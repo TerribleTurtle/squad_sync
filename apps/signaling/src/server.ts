@@ -277,7 +277,7 @@ export default class Server implements Party.Server {
 
               sender.send(
                 JSON.stringify({
-                  type: 'ERROR', // Keeping ERROR for toast for now
+                  type: 'UPLOAD_VERIFIED',
                   code: 'UPLOAD_VERIFIED',
                   message: `File verified: ${keyVerify}`,
                 })
