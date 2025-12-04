@@ -8,7 +8,7 @@ use crate::constants::{
     FFMPEG_THREAD_QUEUE_SIZE, FFMPEG_AUDIO_THREAD_QUEUE_SIZE, FFMPEG_EXTRA_HW_FRAMES, FFMPEG_MAX_MUXING_QUEUE_SIZE,
     DEFAULT_VIDEO_CODEC, DEFAULT_VIDEO_BITRATE, DEFAULT_VIDEO_FRAMERATE,
     DEFAULT_AUDIO_SAMPLE_RATE, DEFAULT_AUDIO_CHANNELS,
-    AUDIO_BUFFER_SIZE_MS, RTBUFSIZE, PRESET_P4, PRESET_BALANCED, PRESET_VERYFAST, PRESET_ULTRAFAST,
+    AUDIO_BUFFER_SIZE_MS, RTBUFSIZE, PRESET_P4,
     TUNE_ZEROLATENCY, PROFILE_HIGH,
     SEGMENT_LIST_SIZE, SEGMENT_LIST_TYPE, SEGMENT_FORMAT_MKV,
     OUTPUT_FORMAT_SEGMENT, OUTPUT_FORMAT_MP4, OUTPUT_FORMAT_LAVFI, OUTPUT_FORMAT_DSHOW, OUTPUT_FORMAT_F32LE,
@@ -501,11 +501,10 @@ impl FfmpegCommandBuilder {
         // REMOVED: fps filter
         // video_filters.push_str(&format!("fps={}", self.framerate));
 
-        if !video_filters.is_empty() {
-             if !video_filters.ends_with(',') {
+        if !video_filters.is_empty()
+             && !video_filters.ends_with(',') {
                 video_filters.push(',');
             }
-        }
 
         // --- FORMAT BRIDGING ---
         if self.video_codec.contains("qsv") {
@@ -514,11 +513,10 @@ impl FfmpegCommandBuilder {
             video_filters.push_str("hwdownload,format=nv12");
         }
 
-        if !video_filters.is_empty() {
-             if video_filters.ends_with(',') {
+        if !video_filters.is_empty()
+             && video_filters.ends_with(',') {
                 video_filters.pop();
             }
-        }
 
         let has_mic = self.audio_source.is_some();
         let has_sys = self.system_audio;

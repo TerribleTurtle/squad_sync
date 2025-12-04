@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "setup:ffmpeg": "node scripts/setup-ffmpeg.js",
-    "test": "vitest"
+    "test": "vitest",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@squadsync/shared": "workspace:*",

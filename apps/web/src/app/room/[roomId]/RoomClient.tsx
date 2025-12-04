@@ -5,19 +5,28 @@ import { WebSquadGrid, WebClip } from '@/components/WebSquadGrid';
 import { Loader2 } from 'lucide-react';
 import PartySocket from 'partysocket';
 
+import { View } from '@squadsync/shared';
+
 interface RoomClientProps {
   roomId: string;
+}
+
+interface RoomClip {
+  id: string;
+  timestamp?: number;
+  views?: View[];
+  [key: string]: unknown;
 }
 
 const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_HOST || 'localhost:1999';
 
 export default function RoomClient({ roomId }: RoomClientProps) {
-  const [rawClips, setRawClips] = useState<any[]>([]);
+  const [rawClips, setRawClips] = useState<RoomClip[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Derive flat list of playable clips (views) for the grid
   const clips: WebClip[] = rawClips.flatMap((clip) =>
-    (clip.views || []).map((view: any) => ({
+    (clip.views || []).map((view: View) => ({
       id: `${clip.id}-${view.author}`, // Unique ID for React key
       url: view.url,
       author: view.author,
@@ -58,7 +67,7 @@ export default function RoomClient({ roomId }: RoomClientProps) {
 
           // Update or add the view
           const views = [...(clip.views || [])];
-          const viewIndex = views.findIndex((v: any) => v.author === msg.view.author);
+          const viewIndex = views.findIndex((v: View) => v.author === msg.view.author);
 
           if (viewIndex !== -1) {
             views[viewIndex] = msg.view;

@@ -82,10 +82,16 @@ export interface UploadUrlGrantedMessage {
   filename: string;
 }
 
+export interface View {
+  author: string;
+  url: string;
+  // Add other properties as needed based on usage in RoomClient.tsx
+}
+
 export interface ClipUpdatedMessage {
   type: 'CLIP_UPDATED';
   clipId: string;
-  view: any; // TODO: Define View type
+  view: View;
 }
 
 export interface ClipReadyMessage {
