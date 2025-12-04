@@ -254,7 +254,21 @@ To save GitHub Actions minutes and iterate quickly, run the full CI suite locall
 
 ```bash
 pnpm run ci
-````
+pnpm run ci
+```
+
+This pipeline includes:
+- **Linting**: ESLint and Clippy
+- **Typechecking**: TypeScript and Rust
+- **Testing**: Vitest (Web) and Cargo Test (Desktop)
+- **Formatting**: Prettier check
+
+### **4.2 Useful Commands**
+
+- **Format Code**: `pnpm run format` (fixes formatting issues)
+- **Check Format**: `pnpm run check:format` (verifies formatting)
+- **Run Web Tests**: `pnpm --filter web test`
+- **Run Desktop Tests**: `pnpm --filter desktop test``
 
 ### **4.2 GitHub Actions**
 
@@ -270,3 +284,4 @@ We use GitHub Actions for a final verification in the cloud. To conserve minutes
 ```
 
 ```
+````

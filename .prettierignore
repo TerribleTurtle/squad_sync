@@ -3,3 +3,5 @@ node_modules
 .turbo
 coverage
 pnpm-lock.yaml
+.next
+src-tauri/target

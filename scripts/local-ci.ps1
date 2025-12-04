@@ -56,8 +56,11 @@ try {
     # Run all checks in parallel where possible via Turbo
     # We explicitly list all tasks to ensure everything is covered
     pnpm turbo run lint lint:rust typecheck check:rust test test:rust build
-    
     if ($LASTEXITCODE -ne 0) { throw "Turbo pipeline failed" }
+
+    Write-Host "Running: pnpm run check:format" -ForegroundColor Gray
+    pnpm run check:format
+    if ($LASTEXITCODE -ne 0) { throw "Format check failed" }
     
     Write-Header "🎉 CI Passed Successfully!"
     Write-Success "All checks passed. You are ready to push!"
