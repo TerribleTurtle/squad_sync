@@ -17,6 +17,7 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [globalCurrentTimeMs, setGlobalCurrentTimeMs] = useState(0);
   const [muted, setMuted] = useState(true);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   const timelineStartMs = useMemo(() => {
     return computeTimelineStartMs(clips);
@@ -36,41 +37,41 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
   const previousTimeRef = useRef<number | undefined>(undefined);
   const animateRef = useRef<((time: number) => void) | undefined>(undefined);
 
+  const debugRef = useRef<HTMLDivElement>(null);
+  const [showDebug, setShowDebug] = useState(false);
+
   // 2. Drift Correction Logic
   const syncVideos = useCallback(
     (globalTime: number) => {
       if (!timelineStartMs) return;
 
-      console.log('Sync Debug:', {
-        globalTime,
-        timelineStartMs,
-        clips: clips.map((c) => ({
-          url: c.url,
-          start: c.videoStartTimeMs,
-          diff: timelineStartMs + globalTime - c.videoStartTimeMs,
-        })),
-      });
+      const stats: any[] = [];
 
       clips.forEach((clip) => {
-        const video = videoRefs.current.get(clip.url); // Using URL as ID for now
+        const video = videoRefs.current.get(clip.url);
         if (!video) return;
 
         // Calculate target time in the video file
-        // ClipTime = (TimelineStart + GlobalTime) - ClipStart
         const targetVideoTimeSec = (timelineStartMs + globalTime - clip.videoStartTimeMs) / 1000;
+        const diff = video.currentTime - targetVideoTimeSec;
 
-        // If video hasn't started yet or has ended (relative to its own file duration)
+        stats.push({
+          author: clip.author,
+          drift: diff.toFixed(3),
+          rate: video.playbackRate.toFixed(2),
+          target: targetVideoTimeSec.toFixed(2),
+          current: video.currentTime.toFixed(2),
+        });
+
+        // If video hasn't started yet or has ended
         if (targetVideoTimeSec < 0 || targetVideoTimeSec > video.duration) {
           if (!video.paused) video.pause();
           return;
         }
 
-        // If video should be playing but is paused
         if (video.paused && isPlaying) {
           video.play().catch(() => {});
         }
-
-        const diff = video.currentTime - targetVideoTimeSec;
 
         // Hard Seek (Drift > 0.2s)
         if (Math.abs(diff) > 0.2) {
@@ -85,8 +86,15 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
           video.playbackRate = 1.0;
         }
       });
+
+      // Valid debug UI update without console spam
+      if (debugRef.current && showDebug) {
+        debugRef.current.innerText =
+          `GlobalTime: ${globalTime.toFixed(1)}\n` +
+          stats.map((s) => `${s.author}: Drift=${s.drift}s Rate=${s.rate}x`).join('\n');
+      }
     },
-    [clips, timelineStartMs, isPlaying]
+    [clips, timelineStartMs, isPlaying, showDebug]
   );
 
   // 3. The Sync Loop
@@ -95,9 +103,14 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
       if (previousTimeRef.current !== undefined) {
         const deltaTime = time - previousTimeRef.current;
 
-        if (isPlaying) {
+        if (isPlaying && !isScrubbing) {
           setGlobalCurrentTimeMs((prev) => {
             const newTime = prev + deltaTime;
+            if (newTime >= globalDurationMs) {
+              setIsPlaying(false);
+              syncVideos(globalDurationMs);
+              return globalDurationMs;
+            }
             syncVideos(newTime);
             return newTime;
           });
@@ -108,7 +121,7 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
         requestRef.current = requestAnimationFrame((t) => animateRef.current?.(t));
       }
     },
-    [isPlaying, syncVideos]
+    [isPlaying, syncVideos, isScrubbing, globalDurationMs]
   );
 
   useEffect(() => {
@@ -137,7 +150,26 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
   const handleSeek = (timeMs: number) => {
     setGlobalCurrentTimeMs(timeMs);
     syncVideos(timeMs);
+    syncVideos(timeMs); // Double sync to ensure seek update
   };
+
+  // Robust Scrubber Release
+  useEffect(() => {
+    const handleUp = () => {
+      if (isScrubbing) {
+        setIsScrubbing(false);
+        if (isPlaying) previousTimeRef.current = performance.now();
+      }
+    };
+    if (isScrubbing) {
+      window.addEventListener('mouseup', handleUp);
+      window.addEventListener('touchend', handleUp);
+    }
+    return () => {
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('touchend', handleUp);
+    };
+  }, [isScrubbing, isPlaying]);
 
   const getGridClass = (count: number) => {
     if (count <= 1) return 'grid-cols-1';
@@ -147,10 +179,17 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950">
+    <div className="flex flex-col h-full bg-slate-950 relative">
+      {/* Visual Debug Overlay */}
+      <div
+        ref={debugRef}
+        className={`absolute top-4 right-4 z-50 bg-black/80 text-green-400 font-mono text-[10px] p-2 rounded pointer-events-none whitespace-pre ${showDebug ? 'block' : 'hidden'}`}
+      />
+
       {/* Grid */}
       <div className={`flex-1 grid ${getGridClass(clips.length)} gap-4 p-4 overflow-hidden`}>
         {clips.map((clip) => (
+          // ... (video rendering same)
           <div
             key={clip.url}
             className="relative group rounded-xl overflow-hidden bg-slate-900 border border-white/10"
@@ -164,14 +203,9 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
               className="w-full h-full object-contain"
               muted={muted}
               playsInline
-              // Disable native controls, we control it programmatically
             />
             <div className="absolute bottom-4 left-4 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-medium">
               {clip.author}
-            </div>
-            {/* Debug Info */}
-            <div className="absolute top-4 left-4 px-2 py-1 rounded bg-black/40 text-[10px] text-white font-mono opacity-0 group-hover:opacity-100 transition-opacity">
-              Start: {new Date(clip.videoStartTimeMs).toLocaleTimeString()}
             </div>
           </div>
         ))}
@@ -198,7 +232,9 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
             max={globalDurationMs}
             value={globalCurrentTimeMs}
             onChange={(e) => handleSeek(parseFloat(e.target.value))}
-            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            className="w-full cursor-pointer accent-indigo-500"
+            onMouseDown={() => setIsScrubbing(true)}
+            onTouchStart={() => setIsScrubbing(true)}
           />
           <div className="flex justify-between text-xs text-slate-400 font-mono">
             <span>{formatTime(globalCurrentTimeMs / 1000)}</span>
@@ -208,6 +244,14 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
 
         <button onClick={() => setMuted(!muted)} className="text-slate-400 hover:text-white">
           {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+        </button>
+
+        {/* Debug Toggle */}
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded border ${showDebug ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'text-slate-600 border-slate-700 hover:text-slate-400'}`}
+        >
+          Debug
         </button>
       </div>
     </div>

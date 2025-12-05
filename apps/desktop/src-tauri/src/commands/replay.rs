@@ -156,6 +156,39 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
         stitch_segments(app, &audio_segments, &stitch_temp_dir, &temp_audio_path)?;
     }
 
+    // 8b. Smart Keyframe Adjust (The Fix)
+    // When using -c copy with -ss, FFmpeg snaps to the NEAREST PREVIOUS keyframe.
+    // We must identify this keyframe to know the ACTUAL start time.
+    let mut actual_trim_start_sec = trim_start_sec;
+    
+    if trim_start_sec > 0.0 {
+        match find_nearest_keyframe(app, &temp_video_path, trim_start_sec) {
+            Ok(keyframe_sec) => {
+                log::info!("Smart Sync: Target Trim={:.3}s, Snapped to Keyframe={:.3}s", trim_start_sec, keyframe_sec);
+                actual_trim_start_sec = keyframe_sec;
+            },
+            Err(e) => {
+                log::warn!("Smart Sync Failed (Probing Error): {}. Falling back to sloppy sync.", e);
+            }
+        }
+    }
+
+    // Recalculate Effective Start Time based on Actual Trim (Keyframe)
+    // Start_Local = First_Segment_Start + Actual_Trim_Offset
+    let effective_start_ms_local = first_video_start_ms_local + (actual_trim_start_sec * 1000.0) as u64;
+
+    let effective_start_ms_ntp = if ntp_offset >= 0 {
+        effective_start_ms_local.saturating_sub(ntp_offset as u64)
+    } else {
+        effective_start_ms_local + ((-ntp_offset) as u64)
+    };
+    
+    let final_start_time_utc_ms = if first_video_start_ms_local > 0 {
+        Some(effective_start_ms_ntp)
+    } else {
+        None 
+    };
+
     // 9. Merge & Trim
     let output_filename = format!("Replay_{}.mp4", timestamp_str);
     let output_dir = if !config.recording.path.is_empty() {
@@ -177,30 +210,13 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
     cmd.creation_flags(0x08000000);
     cmd.arg("-y");
 
-    // Input Video
-    cmd.arg("-ss").arg(trim_start_sec.to_string());
+    // Input Video - Use ACTUAL trim to minimizing confusion, though ffmpeg would snap anyway.
+    cmd.arg("-ss").arg(actual_trim_start_sec.to_string());
     cmd.arg("-i").arg(&temp_video_path);
 
     if has_audio {
-        // Audio might need a different trim if it started at a different time?
-        // Ideally, if we use wallclock timestamps, they should align.
-        // But we are stitching separate files.
-        // Let's assume they align roughly or use the same trim for now.
-        // For frame-perfect audio, we should probe audio start too.
-        
-        let first_audio_path = &audio_segments[0];
-        if let Some(first_audio_start_ms) = probe_start_time(app, first_audio_path) {
-             let audio_trim_sec = if target_start_ms > first_audio_start_ms {
-                (target_start_ms - first_audio_start_ms) as f64 / 1000.0
-            } else {
-                0.0
-            };
-            cmd.arg("-ss").arg(audio_trim_sec.to_string());
-        } else {
-            // Fallback
-            cmd.arg("-ss").arg(trim_start_sec.to_string());
-        }
-        
+        // Audio doesn't have keyframes, but should align with video start
+        cmd.arg("-ss").arg(actual_trim_start_sec.to_string());
         cmd.arg("-i").arg(&temp_audio_path);
     }
 
@@ -232,6 +248,51 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
     } else {
         Err("FFmpeg merge process failed".to_string())
     }
+}
+
+fn find_nearest_keyframe(app: &AppHandle, path: &Path, target_sec: f64) -> Result<f64, String> {
+    let ffprobe_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffprobe")
+        .map_err(|e| e.to_string())?;
+
+    let mut cmd = Command::new(ffprobe_path);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    // Get all frame times that are KEYFRAMES
+    let output = cmd
+        .args([
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-skip_frame", "nokey",
+            "-show_entries", "frame=pkt_pts_time",
+            "-of", "csv=p=0",
+            path.to_string_lossy().as_ref()
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        return Err("FFprobe failed directly".to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse timestamps
+    let mut best_keyframe: f64 = 0.0;
+    
+    for line in stdout.lines() {
+        if let Ok(ts) = line.trim().parse::<f64>() {
+            if ts <= target_sec {
+                best_keyframe = ts;
+            } else {
+                // Since frames are ordered, once we exceed target, we stop.
+                // The previous 'best_keyframe' is the closest one BEFORE target.
+                break;
+            }
+        }
+    }
+    
+    Ok(best_keyframe)
 }
 
 fn find_segments_by_time(
