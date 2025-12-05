@@ -66,7 +66,9 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
     log::info!("Trigger Time: {} (NTP: {}, Offset: {}, Remote: {})", trigger_datetime, ntp_time_ms, ntp_offset, is_remote);
 
     // 3. Define Time Range
-    let duration_sec = config.recording.buffer_duration as i64;
+    // Add 15 seconds of padding to the duration to account for trigger latency/skew
+    // This ensures we capture enough historical video data even if the trigger is late.
+    let duration_sec = config.recording.buffer_duration as i64 + 15;
     let start_time = trigger_datetime - Duration::seconds(duration_sec);
     let end_time = trigger_datetime;
 
@@ -99,26 +101,50 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
 
     // 6. Probe Start Time (Precision)
     // We need the EXACT start time of the first video segment to calculate trim
+    // 6. Probe Start Time (Precision)
+    // We need the EXACT start time of the first video segment to calculate trim
     let first_video_path = &video_segments[0];
-    // We now return Option<u64> instead of Result<u64> for start time, but we still need it for trim calc.
-    // If probing fails, we default to 0 trim (best effort) but start_time_utc_ms will be None.
-    let first_video_start_ms_opt = probe_start_time(app, first_video_path);
-    let first_video_start_ms = first_video_start_ms_opt.unwrap_or(0); // Fallback for trim calc only
+    let first_video_start_ms_local_opt = probe_start_time(app, first_video_path);
+    let first_video_start_ms_local = first_video_start_ms_local_opt.unwrap_or(0);
     
-    // Calculate Trim Start
+    // Calculate Trim Start (Local Time)
     // Target Start = Trigger - Duration
     // Actual Start = First Segment Start
     // Trim = Target Start - Actual Start
-    // If Target Start < Actual Start, we can't trim (we missed the start), so Trim = 0.
     
     let target_start_ms = trigger_time_ms - (duration_sec as u64 * 1000);
-    let trim_start_sec = if first_video_start_ms > 0 && target_start_ms > first_video_start_ms {
-        (target_start_ms - first_video_start_ms) as f64 / 1000.0
+    let trim_start_sec = if first_video_start_ms_local > 0 && target_start_ms > first_video_start_ms_local {
+        (target_start_ms - first_video_start_ms_local) as f64 / 1000.0
     } else {
         0.0
     };
 
-    log::info!("Precision Trim: Target={}, Actual={}, Trim={:.3}s", target_start_ms, first_video_start_ms, trim_start_sec);
+    // Calculate Effective Start Time (Local -> NTP)
+    // This is the timestamp where the generated video file actually starts.
+    // If we trimmed, it starts at target_start_ms.
+    // If we didn't trim, it starts at first_video_start_ms_local.
+    let effective_start_ms_local = if trim_start_sec > 0.0 {
+        target_start_ms
+    } else {
+        first_video_start_ms_local
+    };
+
+    // Convert Effective Start to NTP
+    let effective_start_ms_ntp = if ntp_offset >= 0 {
+        effective_start_ms_local.saturating_sub(ntp_offset as u64)
+    } else {
+        effective_start_ms_local + ((-ntp_offset) as u64)
+    };
+    
+    // Fallback if local probe failed completely (shouldn't happen with valid segments)
+    let final_start_time_utc_ms = if first_video_start_ms_local > 0 {
+        Some(effective_start_ms_ntp)
+    } else {
+        None 
+    };
+
+    log::info!("Precision Trim: Target(Local)={}, Actual(Local)={}, Trim={:.3}s, FinalStart(NTP)={:?}", 
+        target_start_ms, first_video_start_ms_local, trim_start_sec, final_start_time_utc_ms);
 
     // 7. Stitch Video
     let temp_video_path = stitch_temp_dir.join("temp_video.mp4");
@@ -200,7 +226,7 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
         Ok(SavedReplay {
             file_path: output_path.to_string_lossy().to_string(),
             duration_ms: (duration_sec * 1000) as u64,
-            start_time_utc_ms: first_video_start_ms_opt,
+            start_time_utc_ms: final_start_time_utc_ms,
             version: 1,
         })
     } else {

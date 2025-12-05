@@ -13,7 +13,23 @@ export function computeTimelineStartMs(views: View[]): number {
   // Filter out invalid timestamps just in case
   const valid = views.filter((v) => v.videoStartTimeMs && v.videoStartTimeMs > 0);
   if (valid.length === 0) return 0;
-  return Math.min(...valid.map((v) => v.videoStartTimeMs));
+  // Use Math.max to find the LATEST start time (Intersection of all clips)
+  // This ensures the timeline starts only when ALL clips have started.
+  return Math.max(...valid.map((v) => v.videoStartTimeMs));
+}
+
+/**
+ * Calculates the Global Timeline End (Epoch Ms)
+ * This is the earliest end time among all synced clips (Intersection).
+ */
+export function computeTimelineEndMs(views: View[]): number {
+  if (views.length === 0) return 0;
+  const valid = views.filter((v) => v.videoStartTimeMs && v.videoStartTimeMs > 0);
+  if (valid.length === 0) return 0;
+
+  // Use Math.min to find the EARLIEST end time (Intersection of all clips)
+  // This ensures the timeline ends when ANY clip ends.
+  return Math.min(...valid.map((v) => v.videoStartTimeMs + (v.durationMs || 0)));
 }
 
 /**

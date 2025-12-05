@@ -116,7 +116,10 @@ export function useRecorder() {
         }
 
         setTimeout(() => setStatus('Replay Buffer Active'), CLIP_SAVE_DELAY);
-        return savedReplay.start_time_utc_ms;
+        return {
+          startTime: savedReplay.start_time_utc_ms,
+          duration: savedReplay.duration_ms,
+        };
       } catch (e) {
         setStatus(`Error saving: ${e}`);
         showToast(`Error saving: ${e}`, 'error');

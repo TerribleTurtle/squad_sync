@@ -13,7 +13,7 @@
     "typecheck": "turbo typecheck",
     "ci": "turbo run build lint typecheck && pnpm run check:format",
     "desktop": "pnpm --filter desktop tauri dev",
-    "build:desktop": "pnpm --filter desktop tauri build",
+    "build:desktop": "turbo run build --filter=desktop^... && pnpm --filter desktop tauri build",
     "signaling": "pnpm --filter signaling dev",
     "test": "turbo run test test:rust"
   },

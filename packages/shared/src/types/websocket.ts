@@ -34,6 +34,7 @@ export interface UploadCompleteMessage {
   clipId: string;
   key?: string;
   videoStartTimeMs: number;
+  durationMs: number;
 }
 
 export type ClientMessage =
@@ -88,6 +89,7 @@ export interface View {
   url: string;
   timestamp: number;
   videoStartTimeMs: number;
+  durationMs: number;
 }
 
 export interface ClipUpdatedMessage {

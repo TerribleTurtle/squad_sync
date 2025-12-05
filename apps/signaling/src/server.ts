@@ -273,6 +273,7 @@ export default class Server implements Party.Server {
                 url: playbackUrl,
                 timestamp: Date.now(),
                 videoStartTimeMs: msg.videoStartTimeMs,
+                durationMs: msg.durationMs,
               };
 
               // Remove existing view from same author if any

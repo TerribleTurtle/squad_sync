@@ -2,7 +2,12 @@
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause, Volume2, VolumeX } from 'lucide-react';
-import { View, computeTimelineStartMs, computeClipOffsetMs } from '@squadsync/shared';
+import {
+  View,
+  computeTimelineStartMs,
+  computeTimelineEndMs,
+  computeClipOffsetMs,
+} from '@squadsync/shared';
 
 interface WebSquadGridProps {
   clips: View[];
@@ -11,12 +16,20 @@ interface WebSquadGridProps {
 export function WebSquadGrid({ clips }: WebSquadGridProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [globalCurrentTimeMs, setGlobalCurrentTimeMs] = useState(0);
-  const [globalDurationMs, setGlobalDurationMs] = useState(60 * 1000); // Default 60s
   const [muted, setMuted] = useState(true);
 
   const timelineStartMs = useMemo(() => {
     return computeTimelineStartMs(clips);
   }, [clips]);
+
+  const timelineEndMs = useMemo(() => {
+    return computeTimelineEndMs(clips);
+  }, [clips]);
+
+  const globalDurationMs = useMemo(() => {
+    if (!timelineStartMs || !timelineEndMs || timelineEndMs <= timelineStartMs) return 1000;
+    return timelineEndMs - timelineStartMs;
+  }, [timelineStartMs, timelineEndMs]);
 
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const requestRef = useRef<number | undefined>(undefined);
@@ -28,14 +41,25 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
     (globalTime: number) => {
       if (!timelineStartMs) return;
 
+      console.log('Sync Debug:', {
+        globalTime,
+        timelineStartMs,
+        clips: clips.map((c) => ({
+          url: c.url,
+          start: c.videoStartTimeMs,
+          diff: timelineStartMs + globalTime - c.videoStartTimeMs,
+        })),
+      });
+
       clips.forEach((clip) => {
         const video = videoRefs.current.get(clip.url); // Using URL as ID for now
         if (!video) return;
 
-        const offset = computeClipOffsetMs(clip, timelineStartMs);
-        const targetVideoTimeSec = (globalTime - offset) / 1000;
+        // Calculate target time in the video file
+        // ClipTime = (TimelineStart + GlobalTime) - ClipStart
+        const targetVideoTimeSec = (timelineStartMs + globalTime - clip.videoStartTimeMs) / 1000;
 
-        // If video hasn't started yet or has ended
+        // If video hasn't started yet or has ended (relative to its own file duration)
         if (targetVideoTimeSec < 0 || targetVideoTimeSec > video.duration) {
           if (!video.paused) video.pause();
           return;
