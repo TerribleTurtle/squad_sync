@@ -2,15 +2,18 @@
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
-import {
-  View,
-  computeTimelineStartMs,
-  computeTimelineEndMs,
-  computeClipOffsetMs,
-} from '@squadsync/shared';
+import { View, computeTimelineStartMs, computeTimelineEndMs } from '@squadsync/shared';
 
 interface WebSquadGridProps {
   clips: View[];
+}
+
+interface SyncStat {
+  author: string;
+  drift: string;
+  rate: string;
+  target: string;
+  current: string;
 }
 
 export function WebSquadGrid({ clips }: WebSquadGridProps) {
@@ -56,7 +59,7 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
     (globalTime: number, forceSeek: boolean = false) => {
       if (!timelineStartMs) return;
 
-      const stats: any[] = [];
+      const stats: SyncStat[] = [];
 
       activeViews.forEach((clip) => {
         const video = videoRefs.current.get(clip.url);
