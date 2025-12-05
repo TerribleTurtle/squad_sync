@@ -64,46 +64,73 @@ export function useRecorder() {
       try {
         setStatus('Saving Clip...');
         // Pass timestamp to backend (maps to trigger_timestamp in Rust)
-        const filePath = await invoke<string>('save_replay', { trigger_timestamp: timestamp });
+        // Response is now a SavedReplay object
+        interface SavedReplay {
+          file_path: string;
+          duration_ms: number;
+          start_time_utc_ms: number | null;
+          version: number;
+        }
+
+        const savedReplay = await invoke<SavedReplay>('save_replay', {
+          trigger_timestamp: timestamp,
+        });
+        const filePath = savedReplay.file_path;
+
         setStatus(`Clip Saved!`);
         showToast('Clip Saved Successfully!', 'success');
 
         if (uploadUrl && filePath) {
-          try {
-            setStatus('Uploading Clip...');
-            logger.info(`📤 Uploading ${filePath} to ${uploadUrl}`);
+          // FAIL HARD POLICY: Check for valid timestamp
+          if (savedReplay.start_time_utc_ms === null) {
+            logger.error('❌ Upload Aborted: Missing UTC Start Time');
+            showToast('Upload Skipped: Unable to sync clip (Missing Timestamp)', 'error');
+            // We do NOT throw here, we just skip upload. Local file is safe.
+          } else {
+            try {
+              setStatus('Uploading Clip...');
+              logger.info(`📤 Uploading ${filePath} to ${uploadUrl}`);
 
-            // Read file
-            const fileData = await readFile(filePath);
+              // Read file
+              const fileData = await readFile(filePath);
 
-            // Upload to R2 (Presigned URL)
-            const response = await fetch(uploadUrl, {
-              method: 'PUT',
-              body: fileData,
-              headers: {
-                'Content-Type': 'video/mp4',
-              },
-            });
+              // Upload to R2 (Presigned URL)
+              const response = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: fileData,
+                headers: {
+                  'Content-Type': 'video/mp4',
+                },
+              });
 
-            if (!response.ok) {
-              throw new Error(`Upload failed: ${response.statusText}`);
+              if (!response.ok) {
+                throw new Error(`Upload failed: ${response.statusText}`);
+              }
+
+              logger.info('✅ Upload Successful');
+
+              setStatus('Upload Complete!');
+              showToast('Clip Uploaded Successfully!', 'success');
+
+              // TODO: In Phase 3, we will send start_time_utc_ms to signaling here
+            } catch (uploadErr) {
+              const errorMessage =
+                uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+              logger.error('Upload Error:', errorMessage);
+              showToast(`Upload Failed: ${errorMessage}`, 'error');
+              // Don't fail the whole operation, just the upload.
+              // Return null so we don't send UPLOAD_COMPLETE.
+              return null;
             }
-
-            logger.info('✅ Upload Successful');
-
-            setStatus('Upload Complete!');
-            showToast('Clip Uploaded Successfully!', 'success');
-          } catch (uploadErr) {
-            logger.error('Upload Error:', uploadErr);
-            showToast(`Upload Failed: ${uploadErr}`, 'error');
-            // Don't fail the whole operation, just the upload
           }
         }
 
         setTimeout(() => setStatus('Replay Buffer Active'), CLIP_SAVE_DELAY);
+        return savedReplay.start_time_utc_ms;
       } catch (e) {
         setStatus(`Error saving: ${e}`);
         showToast(`Error saving: ${e}`, 'error');
+        return null;
       }
     },
     [setStatus, showToast]

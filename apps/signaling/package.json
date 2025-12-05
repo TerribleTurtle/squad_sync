@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "partykit dev",
+    "predeploy": "pnpm --filter @squadsync/shared build",
     "deploy": "partykit deploy",
     "build": "partykit build",
     "lint": "eslint .",

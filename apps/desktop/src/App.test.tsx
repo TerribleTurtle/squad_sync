@@ -10,7 +10,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 describe('App', () => {
   it('renders the main interface', () => {
     render(<App />);
-    expect(screen.getByText('SquadSync')).toBeInTheDocument();
+    expect(screen.getByText('FluxReplay')).toBeInTheDocument();
     expect(screen.getByText('Enable Replay Buffer')).toBeInTheDocument();
   });
 });

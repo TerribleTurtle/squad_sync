@@ -228,6 +228,20 @@ export default class Server implements Party.Server {
 
         case 'UPLOAD_COMPLETE': {
           this.logger.info('Upload complete from', sender.id, 'for clip', msg.clipId);
+
+          // Validate timestamp (Fail Hard Policy)
+          if (!msg.videoStartTimeMs || msg.videoStartTimeMs < 1700000000000) {
+            this.logger.error(`❌ Invalid videoStartTimeMs: ${msg.videoStartTimeMs}`);
+            sender.send(
+              JSON.stringify({
+                type: 'ERROR',
+                code: 'INVALID_TIMESTAMP',
+                message: 'Missing or invalid videoStartTimeMs',
+              })
+            );
+            return;
+          }
+
           const s3Verify = this.getS3Client();
           const bucketVerify = this.getEnv('R2_BUCKET_NAME');
           const verifyUserId = this.connToUser.get(sender.id);
@@ -258,6 +272,7 @@ export default class Server implements Party.Server {
                 author: verifyUserId, // Using userId as author for now, could be display name
                 url: playbackUrl,
                 timestamp: Date.now(),
+                videoStartTimeMs: msg.videoStartTimeMs,
               };
 
               // Remove existing view from same author if any

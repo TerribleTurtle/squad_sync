@@ -7,7 +7,7 @@ import { SquadList } from './SquadList';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 interface RoomManagerProps {
-  onClipStart?: (timestamp: number, uploadUrl?: string, clipId?: string) => Promise<void>;
+  onClipStart?: (timestamp: number, uploadUrl?: string, clipId?: string) => Promise<number | null>;
 }
 
 export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
@@ -35,15 +35,16 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ onClipStart }) => {
     effectiveDisplayName,
     async (timestamp, uploadUrl, clipId) => {
       if (onClipStart) {
-        await onClipStart(timestamp, uploadUrl, clipId);
+        const videoStartTimeMs = await onClipStart(timestamp, uploadUrl, clipId);
 
         // If we have a clipId and uploadUrl, it means we attempted an upload.
         // Notify server to verify.
-        if (clipId && uploadUrl && client) {
-          logger.info('📤 Sending UPLOAD_COMPLETE for', clipId);
+        if (clipId && uploadUrl && client && videoStartTimeMs) {
+          logger.info(`📤 Sending UPLOAD_COMPLETE for ${clipId}. StartTime: ${videoStartTimeMs}`);
           client.send({
             type: 'UPLOAD_COMPLETE',
             clipId,
+            videoStartTimeMs,
           });
         }
       }

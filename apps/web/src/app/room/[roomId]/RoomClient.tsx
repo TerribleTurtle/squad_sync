@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { WebSquadGrid, WebClip } from '@/components/WebSquadGrid';
+import { WebSquadGrid } from '@/components/WebSquadGrid';
 import { Loader2 } from 'lucide-react';
 import PartySocket from 'partysocket';
 
@@ -26,14 +26,7 @@ export default function RoomClient({ roomId }: RoomClientProps) {
   const [loading, setLoading] = useState(true);
 
   // Derive flat list of playable clips (views) for the grid
-  const clips: WebClip[] = rawClips.flatMap((clip) =>
-    (clip.views || []).map((view: View) => ({
-      id: `${clip.id}-${view.author}`, // Unique ID for React key
-      url: view.url,
-      author: view.author,
-      offsetMs: 0, // TODO: Sync logic
-    }))
-  );
+  const clips: View[] = rawClips.flatMap((clip) => clip.views || []);
 
   useEffect(() => {
     const socket = new PartySocket({

@@ -35,7 +35,7 @@ pub fn run() {
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
                     match crate::commands::replay::save_replay_impl(&app_handle, None).await {
-                        Ok(path) => log::info!("Replay saved via hotkey: {}", path),
+                        Ok(saved_replay) => log::info!("Replay saved via hotkey: {}", saved_replay.file_path),
                         Err(e) => log::error!("Failed to save replay via hotkey: {}", e),
                     }
                 });

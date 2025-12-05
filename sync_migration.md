@@ -10,7 +10,7 @@ Implement a comprehensive synchronization migration to ensure frame-accurate pla
 > **No Backwards Compatibility**: We are strictly enforcing the presence of `videoStartTimeMs` (Epoch time). Legacy clients or clips without valid timestamps will be treated as invalid/error states. There is no fallback for "unsynced" legacy views.
 
 > [!IMPORTANT]
-> **Fail Hard Policy**: If the backend cannot determine a precise `start_time_utc_ms` from the filename or `ffprobe` (validated against Epoch), the upload process will be aborted. This guarantees that all uploaded content is syncable.
+> **Fail Hard Policy (Upload Only)**: If the backend cannot determine a precise `start_time_utc_ms` from the filename or `ffprobe` (validated against Epoch), the **upload process** will be aborted. The local file MUST still be saved for the user to view locally, but it will be flagged as "unsyncable" and rejected by the signaling server.
 
 ## Proposed Changes
 

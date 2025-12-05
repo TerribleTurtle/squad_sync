@@ -12,14 +12,22 @@ use std::sync::OnceLock;
 static RE_VIDEO_AUDIO: OnceLock<Regex> = OnceLock::new();
 static RE_TIMESTAMP: OnceLock<Regex> = OnceLock::new();
 
+#[derive(serde::Serialize)]
+pub struct SavedReplay {
+    pub file_path: String,
+    pub duration_ms: u64,
+    pub start_time_utc_ms: Option<u64>,
+    pub version: u32,
+}
+
 
 
 #[command]
-pub async fn save_replay(app: AppHandle, trigger_timestamp: Option<u64>) -> Result<String, String> {
+pub async fn save_replay(app: AppHandle, trigger_timestamp: Option<u64>) -> Result<SavedReplay, String> {
     save_replay_impl(&app, trigger_timestamp).await
 }
 
-pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -> Result<String, String> {
+pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -> Result<SavedReplay, String> {
     log::info!("Save Replay triggered (Time-Based)");
 
     // Wait for FFmpeg to flush recent packets
@@ -92,7 +100,10 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
     // 6. Probe Start Time (Precision)
     // We need the EXACT start time of the first video segment to calculate trim
     let first_video_path = &video_segments[0];
-    let first_video_start_ms = probe_start_time(app, first_video_path).map_err(|e| format!("Failed to probe video start: {}", e))?;
+    // We now return Option<u64> instead of Result<u64> for start time, but we still need it for trim calc.
+    // If probing fails, we default to 0 trim (best effort) but start_time_utc_ms will be None.
+    let first_video_start_ms_opt = probe_start_time(app, first_video_path);
+    let first_video_start_ms = first_video_start_ms_opt.unwrap_or(0); // Fallback for trim calc only
     
     // Calculate Trim Start
     // Target Start = Trigger - Duration
@@ -101,7 +112,7 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
     // If Target Start < Actual Start, we can't trim (we missed the start), so Trim = 0.
     
     let target_start_ms = trigger_time_ms - (duration_sec as u64 * 1000);
-    let trim_start_sec = if target_start_ms > first_video_start_ms {
+    let trim_start_sec = if first_video_start_ms > 0 && target_start_ms > first_video_start_ms {
         (target_start_ms - first_video_start_ms) as f64 / 1000.0
     } else {
         0.0
@@ -152,7 +163,7 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
         // For frame-perfect audio, we should probe audio start too.
         
         let first_audio_path = &audio_segments[0];
-        if let Ok(first_audio_start_ms) = probe_start_time(app, first_audio_path) {
+        if let Some(first_audio_start_ms) = probe_start_time(app, first_audio_path) {
              let audio_trim_sec = if target_start_ms > first_audio_start_ms {
                 (target_start_ms - first_audio_start_ms) as f64 / 1000.0
             } else {
@@ -186,7 +197,12 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
     let _ = fs::remove_dir_all(&stitch_temp_dir);
 
     if status.success() {
-        Ok(output_path.to_string_lossy().to_string())
+        Ok(SavedReplay {
+            file_path: output_path.to_string_lossy().to_string(),
+            duration_ms: (duration_sec * 1000) as u64,
+            start_time_utc_ms: first_video_start_ms_opt,
+            version: 1,
+        })
     } else {
         Err("FFmpeg merge process failed".to_string())
     }
@@ -257,21 +273,13 @@ fn find_segments_by_time(
     Ok(segments.into_iter().map(|(p, _)| p).collect())
 }
 
-fn probe_start_time(app: &AppHandle, path: &Path) -> Result<u64, String> {
+fn probe_start_time(app: &AppHandle, path: &Path) -> Option<u64> {
     // 1. Parse Filename for approximate Epoch (Fallback & Validation)
-    let fname = path.file_name().and_then(|n| n.to_str()).ok_or("Invalid filename")?;
-    let re = RE_TIMESTAMP.get_or_init(|| Regex::new(r"(\d{14})\.mkv").expect("Invalid Regex Pattern"));
-    let filename_epoch_ms = if let Some(caps) = re.captures(fname) {
-        if let Some(ts_str) = caps.get(1) {
-            if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
-                Local.from_local_datetime(&naive).latest().map(|ts| ts.timestamp_millis() as u64)
-            } else { None }
-        } else { None }
-    } else { None };
+    let fname = path.file_name().and_then(|n| n.to_str())?;
+    let filename_epoch_ms = crate::ffmpeg::utils::parse_segment_filename_to_epoch_ms(fname).ok();
 
     // 2. Probe with ffprobe
-    let ffprobe_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffprobe")
-        .map_err(|e| format!("FFprobe not found: {}", e))?;
+    let ffprobe_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffprobe").ok()?;
 
     let mut cmd = Command::new(ffprobe_path);
     #[cfg(target_os = "windows")]
@@ -285,7 +293,7 @@ fn probe_start_time(app: &AppHandle, path: &Path) -> Result<u64, String> {
             path.to_string_lossy().as_ref()
         ])
         .output()
-        .map_err(|e| e.to_string())?;
+        .ok()?;
 
     let mut probe_epoch_ms = None;
     if output.status.success() {
@@ -299,25 +307,10 @@ fn probe_start_time(app: &AppHandle, path: &Path) -> Result<u64, String> {
     match (filename_epoch_ms, probe_epoch_ms) {
         (Some(fn_ms), Some(pr_ms)) => {
             // If probe is "reasonable" (e.g. > year 2000), use it.
-            // 946684800000 is year 2000.
             if pr_ms > 946684800000 {
-                // It's likely Epoch. Use it for precision.
-                // Sanity check: is it close to filename? (within 1 hour?)
-                // If it's wildly different, trust filename?
-                // Actually, if we used wallclock, it should be very close.
                 Ok(pr_ms)
             } else {
-                // Probe is likely relative (0 or small).
-                // We want Epoch.
-                // But we wanted sub-second precision!
-                // If probe is 0.0, we lose sub-second.
-                // If probe is 0.123, maybe we can add it to filename?
-                // Risk: Filename is integer second. We don't know if it rounded down or up?
-                // strftime %S usually truncates.
-                // So Filename Time <= Actual Time.
-                // If probe is relative, it might be offset from Filename Time?
-                // No, relative usually means "from start of file".
-                // Let's just fallback to filename for safety to fix the "empty clip" bug first.
+                // Probe is relative. Fallback to filename.
                 log::warn!("Probe returned non-Epoch time ({}). Falling back to filename time ({}).", pr_ms, fn_ms);
                 Ok(fn_ms)
             }
@@ -335,7 +328,7 @@ fn probe_start_time(app: &AppHandle, path: &Path) -> Result<u64, String> {
              }
         },
         (None, None) => Err("Failed to determine start time from both probe and filename.".to_string())
-    }
+    }.ok()
 }
 
 fn stitch_segments(app: &AppHandle, segments: &[PathBuf], temp_dir: &Path, output_path: &Path) -> Result<(), String> {

@@ -197,4 +197,54 @@ mod tests {
         // kbps = 20,736
         assert_eq!(calculate_dynamic_bitrate(1920, 1080, 60), "20736k");
     }
+
+    #[test]
+    fn test_parse_segment_filename_to_epoch_ms() {
+        use chrono::{TimeZone, Local};
+        // Valid
+        // Construct expected value dynamically to handle local timezone of the test runner
+        let naive = chrono::NaiveDateTime::parse_from_str("20231027120000", "%Y%m%d%H%M%S").unwrap();
+        let expected = Local.from_local_datetime(&naive).latest().unwrap().timestamp_millis() as u64;
+        
+        assert_eq!(parse_segment_filename_to_epoch_ms("video_20231027120000.mkv").unwrap(), expected);
+        
+        // Invalid format
+        assert!(parse_segment_filename_to_epoch_ms("video_invalid.mkv").is_err());
+        
+        // Invalid date
+        assert!(parse_segment_filename_to_epoch_ms("video_20239999120000.mkv").is_err());
+    }
+}
+
+/// Parses a segment filename to extract the UTC Epoch timestamp in milliseconds.
+/// Expected format: ...YYYYMMDDHHMMSS.ext (last 14 digits before extension)
+/// 
+/// # Arguments
+/// * `filename` - The filename to parse.
+/// 
+/// # Returns
+/// * `Result<u64, String>` - The UTC Epoch timestamp in milliseconds.
+pub fn parse_segment_filename_to_epoch_ms(filename: &str) -> Result<u64, String> {
+    use chrono::{TimeZone, Local};
+    use regex::Regex;
+
+    // Regex to find the last 14 digits before the extension
+    let re = Regex::new(r"(\d{14})\.[a-zA-Z0-9]+$").map_err(|e| e.to_string())?;
+    
+    if let Some(caps) = re.captures(filename) {
+        if let Some(ts_str) = caps.get(1) {
+            let naive = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S")
+                .map_err(|e| format!("Failed to parse date string '{}': {}", ts_str.as_str(), e))?;
+            
+            // The filename timestamp is in LOCAL time (as per current implementation)
+            // We need to convert it to UTC Epoch.
+            // Note: This relies on the system timezone being correct.
+            let local_dt = Local.from_local_datetime(&naive).latest()
+                .ok_or_else(|| format!("Ambiguous or invalid local time: {}", ts_str.as_str()))?;
+                
+            return Ok(local_dt.timestamp_millis() as u64);
+        }
+    }
+    
+    Err(format!("Could not find valid timestamp pattern in filename: {}", filename))
 }

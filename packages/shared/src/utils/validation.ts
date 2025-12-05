@@ -25,6 +25,7 @@ export const UploadCompleteSchema = z.object({
   type: z.literal('UPLOAD_COMPLETE'),
   clipId: z.string(),
   key: z.string().optional(),
+  videoStartTimeMs: z.number(),
 });
 
 export const RequestUploadUrlSchema = z.object({
