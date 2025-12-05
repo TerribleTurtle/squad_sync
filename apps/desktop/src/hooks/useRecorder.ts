@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { readFile } from '@tauri-apps/plugin-fs';
-import { fetch } from '@tauri-apps/plugin-http';
+// import { readFile } from '@tauri-apps/plugin-fs'; // Removed
+// import { fetch } from '@tauri-apps/plugin-http'; // Removed
 import { useRecordingStore } from '../stores/recordingStore';
 import { useToastStore } from '../stores/toastStore';
 import { REPLAY_BUFFER_DELAY, CLIP_SAVE_DELAY } from '@squadsync/shared';
@@ -91,21 +91,11 @@ export function useRecorder() {
               setStatus('Uploading Clip...');
               logger.info(`📤 Uploading ${filePath} to ${uploadUrl}`);
 
-              // Read file
-              const fileData = await readFile(filePath);
-
-              // Upload to R2 (Presigned URL)
-              const response = await fetch(uploadUrl, {
-                method: 'PUT',
-                body: fileData,
-                headers: {
-                  'Content-Type': 'video/mp4',
-                },
+              // Use Rust backend for upload (Streaming)
+              await invoke('upload_clip_to_url', {
+                filePath,
+                uploadUrl,
               });
-
-              if (!response.ok) {
-                throw new Error(`Upload failed: ${response.statusText}`);
-              }
 
               logger.info('✅ Upload Successful');
 

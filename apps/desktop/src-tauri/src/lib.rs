@@ -58,7 +58,8 @@ pub fn run() {
         commands::playback::rename_recording,
         commands::playback::show_in_folder,
         commands::playback::open_file,
-        commands::playback::generate_thumbnail
+        commands::playback::generate_thumbnail,
+        commands::upload::upload_clip_to_url
     ])
     .setup(|app| {
       #[cfg(debug_assertions)]

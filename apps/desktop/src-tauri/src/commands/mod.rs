@@ -5,3 +5,4 @@ pub mod config;
 pub mod devices;
 pub mod monitors;
 pub mod playback;
+pub mod upload;

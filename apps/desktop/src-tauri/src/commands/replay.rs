@@ -422,8 +422,8 @@ async fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBu
         };
         
         // Wait loop
-        let max_retries = 10; // 5 seconds (10 * 500ms)
-        for _ in 0..max_retries {
+        let max_retries = 5; // 2.5 seconds (5 * 500ms)
+        for i in 0..max_retries {
             // Check if a newer file exists
             let mut newer_found = false;
             if let Ok(entries) = fs::read_dir(buffer_dir) {
@@ -447,7 +447,7 @@ async fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBu
             }
 
             if newer_found {
-                log::info!("Newer segment found. Active segment {} considered safe.", fname);
+                log::info!("Newer segment found. Active segment {} considered safe. (Waited {}ms)", fname, i * 500);
                 return;
             }
 
@@ -456,17 +456,17 @@ async fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBu
                 if let Ok(modified) = meta.modified() {
                     if let Ok(age) = std::time::SystemTime::now().duration_since(modified) {
                         if age.as_millis() > 1000 {
-                            log::info!("Segment {} inactive for >1s. Proceeding.", fname);
+                            log::info!("Segment {} inactive for >1s. Proceeding. (Waited {}ms)", fname, i * 500);
                             return;
                         }
                     }
                 }
             }
 
-            log::debug!("Waiting for segment {} to finish...", fname);
+            log::debug!("Waiting for segment {} to finish... (Attempt {}/{})", fname, i + 1, max_retries);
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
-        log::warn!("Timed out waiting for segment {} completion. Proceeding anyway.", fname);
+        log::warn!("Timed out waiting for segment {} completion. Proceeding anyway. (Waited {}ms)", fname, max_retries * 500);
     }
 }
 
