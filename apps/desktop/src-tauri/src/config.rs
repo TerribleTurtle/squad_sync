@@ -24,7 +24,7 @@ pub struct RecordingConfig {
     pub buffer_duration: u32,
     #[serde(default = "default_segment_time")]
     pub segment_time: u32,
-    pub monitor_index: u32,
+    pub monitor_index: Option<u32>,
     pub encoder: String,
     pub audio_source: Option<String>,
     pub system_audio_device: Option<String>,
@@ -94,7 +94,7 @@ impl Default for AppConfig {
                 bitrate: None,
                 buffer_duration: 60, // 1 minute default buffer
                 segment_time: 15,     // 15 second segments
-                monitor_index: 0,
+                monitor_index: None,
                 encoder: "auto".to_string(),
                 audio_source,
                 system_audio_device,

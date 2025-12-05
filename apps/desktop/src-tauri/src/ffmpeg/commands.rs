@@ -569,6 +569,17 @@ impl FfmpegCommandBuilder {
 
         // --- VIDEO ENCODING ---
         args.extend(vec!["-c:v".to_string(), self.video_codec.clone()]);
+
+        // Restore pix_fmt d3d11 for hardware encoders (ddagrab path)
+        // Previous behavior was to set d3d11 for ddagrab. Since ddagrab is now default/hardcoded,
+        // we set it for all hardware encoders. Software (x264) needs yuv420p.
+        // WARNING: DO NOT TOUCH THIS WITHOUT EXPLICIT PERMISSION.
+        // Changing this will break scale_d3d11 and cause A/V desync.
+        if !self.video_codec.contains("libx264") {
+             args.extend(vec!["-pix_fmt".to_string(), "d3d11".to_string()]);
+        } else {
+             args.extend(vec!["-pix_fmt".to_string(), "yuv420p".to_string()]);
+        }
         
         // Sanitize preset based on codec
         let raw_preset = self.preset.clone().unwrap_or(PRESET_P4.to_string());
@@ -1000,5 +1011,23 @@ mod tests {
         let has_map = args.iter().any(|a| a.contains("hwmap"));
         let has_download = args.iter().any(|a| a.contains("hwdownload"));
         assert!(!has_map && !has_download, "NVENC should not have bridging filters");
+    }
+    #[test]
+    fn test_pix_fmt_restoration() {
+        // Case 1: Hardware Encoder (NVENC) -> Should use d3d11
+        let builder_hw = FfmpegCommandBuilder::new("output.mp4".to_string())
+            .with_video_codec("h264_nvenc".to_string());
+        let args_hw = builder_hw.build();
+        
+        let pix_fmt_idx_hw = args_hw.iter().position(|r| r == "-pix_fmt").unwrap();
+        assert_eq!(args_hw[pix_fmt_idx_hw + 1], "d3d11", "Hardware encoder should use d3d11 pix_fmt");
+
+        // Case 2: Software Encoder (x264) -> Should use yuv420p
+        let builder_sw = FfmpegCommandBuilder::new("output.mp4".to_string())
+            .with_video_codec("libx264".to_string());
+        let args_sw = builder_sw.build();
+        
+        let pix_fmt_idx_sw = args_sw.iter().position(|r| r == "-pix_fmt").unwrap();
+        assert_eq!(args_sw[pix_fmt_idx_sw + 1], "yuv420p", "Software encoder should use yuv420p pix_fmt");
     }
 }

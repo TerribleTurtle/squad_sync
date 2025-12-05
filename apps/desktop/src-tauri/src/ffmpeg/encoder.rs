@@ -166,7 +166,11 @@ fn probe_scaler(app: &AppHandle, filter_name: &str) -> bool {
             "-init_hw_device", "d3d11va=d3d11",
             "-f", "lavfi",
             "-i", "color=s=64x64",
-            "-vf", &format!("hwupload,{}", filter_name),
+            "-frames:v", "1",
+            // WARNING: DO NOT TOUCH THIS WITHOUT EXPLICIT PERMISSION.
+            // format=nv12 is REQUIRED for d3d11 upload.
+            // scale_d3d11=format=nv12 is REQUIRED for correct probe.
+            "-vf", &format!("format=nv12,hwupload,{}=format=nv12", filter_name),
             "-f", "null",
             "-"
         ])

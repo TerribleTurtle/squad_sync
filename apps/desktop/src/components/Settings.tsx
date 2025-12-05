@@ -170,7 +170,7 @@ export function Settings() {
             <Select
               label="Monitor"
               icon={Monitor}
-              value={config.recording.monitor_index || 0}
+              value={config.recording.monitor_index ?? monitors.find((m) => m.is_primary)?.id ?? 0}
               onChange={(val) => updateRecordingConfig('monitor_index', parseInt(val))}
               options={monitors.map((m) => ({
                 label: `${m.name} (${m.width}x${m.height})${m.is_primary ? ' (Primary)' : ''}`,
