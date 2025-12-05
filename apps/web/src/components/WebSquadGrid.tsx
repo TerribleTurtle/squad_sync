@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Play, Pause, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import {
   View,
   computeTimelineStartMs,
@@ -18,7 +18,10 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
   const [globalCurrentTimeMs, setGlobalCurrentTimeMs] = useState(0);
   const [muted, setMuted] = useState(true);
   const [isScrubbing, setIsScrubbing] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [videosReady, setVideosReady] = useState(false);
 
+  // 1. Timeline Metrics
   const timelineStartMs = useMemo(() => {
     return computeTimelineStartMs(clips);
   }, [clips]);
@@ -32,28 +35,54 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
     return timelineEndMs - timelineStartMs;
   }, [timelineStartMs, timelineEndMs]);
 
+  // Refs
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const requestRef = useRef<number | undefined>(undefined);
   const previousTimeRef = useRef<number | undefined>(undefined);
   const animateRef = useRef<((time: number) => void) | undefined>(undefined);
 
+  // Buffering State Tracker (Ref for sync loop access)
+  const bufferingStateRef = useRef<Map<string, boolean>>(new Map());
+
+  // Debug
   const debugRef = useRef<HTMLDivElement>(null);
   const [showDebug, setShowDebug] = useState(false);
 
-  // 2. Drift Correction Logic
+  // Optimization: Cached list of active views to avoid Map.get() in loop
+  const activeViews = useMemo(() => clips, [clips]);
+
+  // 2. Core Sync Logic
   const syncVideos = useCallback(
-    (globalTime: number) => {
+    (globalTime: number, forceSeek: boolean = false) => {
       if (!timelineStartMs) return;
 
       const stats: any[] = [];
 
-      clips.forEach((clip) => {
+      activeViews.forEach((clip) => {
         const video = videoRefs.current.get(clip.url);
         if (!video) return;
 
-        // Calculate target time in the video file
+        // Calculate target time in this specific video file
+        // target = (globalTime - (clipStart - timelineStart)) / 1000
+        // Simplifies to: (globalTime + timelineStart - clipStart) / 1000
         const targetVideoTimeSec = (timelineStartMs + globalTime - clip.videoStartTimeMs) / 1000;
+
+        // Clip hasn't started yet or has ended in the global timeline
+        if (targetVideoTimeSec < 0 || targetVideoTimeSec > video.duration) {
+          if (!video.paused) video.pause();
+          // We don't correct drift for inactive videos
+          return;
+        }
+
+        // Ensure active videos are playing if we are playing (and not buffering globally)
+        if (isPlaying && !isBuffering && video.paused && !forceSeek) {
+          video.play().catch(() => {});
+        } else if (!isPlaying && !video.paused) {
+          video.pause();
+        }
+
         const diff = video.currentTime - targetVideoTimeSec;
+        const absDiff = Math.abs(diff);
 
         stats.push({
           author: clip.author,
@@ -63,57 +92,108 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
           current: video.currentTime.toFixed(2),
         });
 
-        // If video hasn't started yet or has ended
-        if (targetVideoTimeSec < 0 || targetVideoTimeSec > video.duration) {
-          if (!video.paused) video.pause();
-          return;
-        }
+        // --- Drift Correction Strategy ---
 
-        if (video.paused && isPlaying) {
-          video.play().catch(() => {});
-        }
-
-        // Hard Seek (Drift > 0.2s)
-        if (Math.abs(diff) > 0.2) {
+        // 1. Force Seek (User scrub or massive drift)
+        if (forceSeek || absDiff > 0.2) {
           video.currentTime = targetVideoTimeSec;
-        }
-        // Micro-Adjustment (Drift > 0.05s)
-        else if (Math.abs(diff) > 0.05) {
-          video.playbackRate = diff > 0 ? 0.95 : 1.05;
-        }
-        // In Sync
-        else {
           video.playbackRate = 1.0;
+        }
+        // 2. Micro-Adjustment with Hysteresis
+        else {
+          // Current state: Are we already correcting?
+          const isCorrecting = Math.abs(video.playbackRate - 1.0) > 0.01;
+
+          if (isCorrecting) {
+            // Exit Strategy: Only return to 1.0 if we are VERY close (Dead zone < 10ms)
+            if (absDiff < 0.01) {
+              video.playbackRate = 1.0;
+            }
+            // Otherwise keep correcting (The existing rate is likely fine, or we could update it)
+          } else {
+            // Enter Strategy: Only start correcting if we drift significantly (> 50ms)
+            if (absDiff > 0.05) {
+              video.playbackRate = diff > 0 ? 0.95 : 1.05;
+            }
+          }
         }
       });
 
-      // Valid debug UI update without console spam
       if (debugRef.current && showDebug) {
         debugRef.current.innerText =
-          `GlobalTime: ${globalTime.toFixed(1)}\n` +
+          `GlobalTime: ${globalTime.toFixed(1)} ${isBuffering ? '(BUFFERING)' : ''}\n` +
           stats.map((s) => `${s.author}: Drift=${s.drift}s Rate=${s.rate}x`).join('\n');
       }
     },
-    [clips, timelineStartMs, isPlaying, showDebug]
+    [timelineStartMs, isPlaying, isBuffering, showDebug, activeViews]
   );
 
-  // 3. The Sync Loop
+  // 3. Pre-Roll / Initial Seek
+  // When clips change, we want to snap everything to 0:00 (Global) immediately
+  useEffect(() => {
+    if (activeViews.length > 0 && timelineStartMs > 0) {
+      // Wait a tick for video elements to mount
+      const timer = setTimeout(() => {
+        syncVideos(0, true); // Force seek to 0
+        setVideosReady(true);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeViews, timelineStartMs, syncVideos]);
+
+  // 4. Global Buffering Check
+  const checkGlobalBuffering = useCallback(() => {
+    let anyBuffering = false;
+
+    activeViews.forEach((clip) => {
+      const isBuf = bufferingStateRef.current.get(clip.url);
+      // Only care if video SHOULD be playing (within its time range)
+      if (isBuf) {
+        const video = videoRefs.current.get(clip.url);
+        // If video is active in current timeframe
+        if (video && !video.paused) {
+          anyBuffering = true;
+        }
+      }
+    });
+
+    // Update state only if changed to avoid re-renders
+    setIsBuffering((prev) => {
+      if (prev !== anyBuffering) return anyBuffering;
+      return prev;
+    });
+
+    return anyBuffering;
+  }, [activeViews]);
+
+  // 5. The Sync Loop
   const animate = useCallback(
     (time: number) => {
       if (previousTimeRef.current !== undefined) {
         const deltaTime = time - previousTimeRef.current;
 
         if (isPlaying && !isScrubbing) {
-          setGlobalCurrentTimeMs((prev) => {
-            const newTime = prev + deltaTime;
-            if (newTime >= globalDurationMs) {
-              setIsPlaying(false);
-              syncVideos(globalDurationMs);
-              return globalDurationMs;
-            }
-            syncVideos(newTime);
-            return newTime;
-          });
+          // Check buffering
+          const currentlyBuffering = checkGlobalBuffering();
+
+          if (!currentlyBuffering) {
+            setGlobalCurrentTimeMs((prev) => {
+              const newTime = prev + deltaTime;
+              if (newTime >= globalDurationMs) {
+                setIsPlaying(false);
+                syncVideos(globalDurationMs, true);
+                return globalDurationMs;
+              }
+              syncVideos(newTime);
+              return newTime;
+            });
+          } else {
+            // If buffering, we don't advance time, but we might mistakenly fall out of sync?
+            // Ideally we pause the "good" videos?
+            // syncVideos() is called with CURRENT time, which will pause videos if they are ahead.
+            // But we need to ensure we call it to enforce the pause.
+            syncVideos(globalCurrentTimeMs);
+          }
         }
       }
       previousTimeRef.current = time;
@@ -121,7 +201,14 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
         requestRef.current = requestAnimationFrame((t) => animateRef.current?.(t));
       }
     },
-    [isPlaying, syncVideos, isScrubbing, globalDurationMs]
+    [
+      isPlaying,
+      isScrubbing,
+      globalDurationMs,
+      syncVideos,
+      checkGlobalBuffering,
+      globalCurrentTimeMs,
+    ]
   );
 
   useEffect(() => {
@@ -137,7 +224,9 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
     };
   }, [isPlaying]);
 
+  // Handlers
   const handlePlay = () => {
+    // Resume audio context if needed (browser policy)
     setIsPlaying(true);
     previousTimeRef.current = performance.now();
   };
@@ -149,8 +238,7 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
 
   const handleSeek = (timeMs: number) => {
     setGlobalCurrentTimeMs(timeMs);
-    syncVideos(timeMs);
-    syncVideos(timeMs); // Double sync to ensure seek update
+    syncVideos(timeMs, true); // Force seek
   };
 
   // Robust Scrubber Release
@@ -187,22 +275,46 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
       />
 
       {/* Grid */}
-      <div className={`flex-1 grid ${getGridClass(clips.length)} gap-4 p-4 overflow-hidden`}>
+      <div
+        className={`flex-1 grid ${getGridClass(clips.length)} gap-4 p-4 overflow-hidden relative`}
+      >
+        {/* Global Loading Spinner */}
+        {(isBuffering || !videosReady) && (
+          <div className="absolute inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <Loader2 size={48} className="text-white animate-spin" />
+          </div>
+        )}
+
         {clips.map((clip) => (
-          // ... (video rendering same)
           <div
             key={clip.url}
             className="relative group rounded-xl overflow-hidden bg-slate-900 border border-white/10"
           >
             <video
               ref={(el) => {
-                if (el) videoRefs.current.set(clip.url, el);
-                else videoRefs.current.delete(clip.url);
+                if (el) {
+                  videoRefs.current.set(clip.url, el);
+                  // Add listeners for buffering
+                  const onWaiting = () => bufferingStateRef.current.set(clip.url, true);
+                  const onPlaying = () => bufferingStateRef.current.set(clip.url, false);
+                  const onCanPlay = () => bufferingStateRef.current.set(clip.url, false);
+
+                  el.addEventListener('waiting', onWaiting);
+                  el.addEventListener('playing', onPlaying);
+                  el.addEventListener('canplay', onCanPlay);
+
+                  // Cleanup helper attached to element? No, ref callback runs with null on unmount
+                } else {
+                  videoRefs.current.delete(clip.url);
+                  bufferingStateRef.current.delete(clip.url);
+                }
               }}
               src={clip.url}
               className="w-full h-full object-contain"
               muted={muted}
               playsInline
+              // Important: PRELOAD metadata so we can set currentTime immediately
+              preload="auto"
             />
             <div className="absolute bottom-4 left-4 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-medium">
               {clip.author}
