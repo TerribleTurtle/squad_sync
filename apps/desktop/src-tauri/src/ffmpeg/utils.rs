@@ -201,13 +201,18 @@ mod tests {
     #[test]
     fn test_parse_segment_filename_to_epoch_ms() {
         use chrono::{TimeZone, Local};
-        // Valid
+        // Valid (Legacy 14 digits)
         // Construct expected value dynamically to handle local timezone of the test runner
         let naive = chrono::NaiveDateTime::parse_from_str("20231027120000", "%Y%m%d%H%M%S").unwrap();
         let expected = Local.from_local_datetime(&naive).latest().unwrap().timestamp_millis() as u64;
         
         assert_eq!(parse_segment_filename_to_epoch_ms("video_20231027120000.mkv").unwrap(), expected);
         
+        // Valid (New 17 digits with milliseconds)
+        // Expected = Base timestamp + 123ms
+        let expected_ms = expected + 123;
+        assert_eq!(parse_segment_filename_to_epoch_ms("video_20231027120000123.mkv").unwrap(), expected_ms);
+
         // Invalid format
         assert!(parse_segment_filename_to_epoch_ms("video_invalid.mkv").is_err());
         
@@ -228,8 +233,11 @@ pub fn parse_segment_filename_to_epoch_ms(filename: &str) -> Result<u64, String>
     use chrono::{TimeZone, Local};
     use regex::Regex;
 
-    // Regex to find the last 14 digits before the extension
-    let re = Regex::new(r"(\d{14})\.[a-zA-Z0-9]+$").map_err(|e| e.to_string())?;
+    // Regex to find the last 14 digits (legacy) or 17 digits (new) before the extension
+    // Matches: ...YYYYMMDDHHMMSS.ext OR ...YYYYMMDDHHMMSSmmm.ext
+    // Group 1: YYYYMMDDHHMMSS (14 digits)
+    // Group 2: mmm (3 digits, optional)
+    let re = Regex::new(r"(\d{14})(\d{3})?\.([a-zA-Z0-9]+)$").map_err(|e| e.to_string())?;
     
     if let Some(caps) = re.captures(filename) {
         if let Some(ts_str) = caps.get(1) {
@@ -242,7 +250,16 @@ pub fn parse_segment_filename_to_epoch_ms(filename: &str) -> Result<u64, String>
             let local_dt = Local.from_local_datetime(&naive).latest()
                 .ok_or_else(|| format!("Ambiguous or invalid local time: {}", ts_str.as_str()))?;
                 
-            return Ok(local_dt.timestamp_millis() as u64);
+            let mut epoch_ms = local_dt.timestamp_millis() as u64;
+
+            // Add milliseconds if present
+            if let Some(ms_str) = caps.get(2) {
+                if let Ok(ms) = ms_str.as_str().parse::<u64>() {
+                    epoch_ms += ms;
+                }
+            }
+
+            return Ok(epoch_ms);
         }
     }
     

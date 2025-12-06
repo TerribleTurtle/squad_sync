@@ -41,8 +41,9 @@ pub async fn start_recording_process(app: &AppHandle) -> Result<(Sender<Recordin
 
     println!("Buffer Dir: {:?}", buffer_dir);
     // Patterns must match what session.rs uses (strftime format)
-    let video_pattern = buffer_dir.join("video_%Y%m%d%H%M%S.mkv").to_string_lossy().to_string();
-    let audio_pattern = buffer_dir.join("audio_%Y%m%d%H%M%S.mkv").to_string_lossy().to_string();
+    // Added %03u for millisecond precision
+    let video_pattern = buffer_dir.join("video_%Y%m%d%H%M%S%03u.mkv").to_string_lossy().to_string();
+    let audio_pattern = buffer_dir.join("audio_%Y%m%d%H%M%S%03u.mkv").to_string_lossy().to_string();
 
     println!("Buffer Dir: {:?}", buffer_dir);
     println!("Video Pattern: {}", video_pattern);

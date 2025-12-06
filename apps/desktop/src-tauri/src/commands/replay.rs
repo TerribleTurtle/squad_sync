@@ -20,8 +20,6 @@ pub struct SavedReplay {
     pub version: u32,
 }
 
-
-
 #[command]
 pub async fn save_replay(app: AppHandle, trigger_timestamp: Option<u64>) -> Result<SavedReplay, String> {
     save_replay_impl(&app, trigger_timestamp).await
@@ -101,8 +99,7 @@ pub async fn save_replay_impl(app: &AppHandle, trigger_timestamp: Option<u64>) -
 
     // 6. Probe Start Time (Precision)
     // We need the EXACT start time of the first video segment to calculate trim
-    // 6. Probe Start Time (Precision)
-    // We need the EXACT start time of the first video segment to calculate trim
+
     let first_video_path = &video_segments[0];
     let first_video_start_ms_local_opt = probe_start_time(app, first_video_path);
     let first_video_start_ms_local = first_video_start_ms_local_opt.unwrap_or(0);
@@ -302,13 +299,6 @@ fn find_segments_by_time(
     end: DateTime<Local>
 ) -> Result<Vec<PathBuf>, String> {
     let mut segments = Vec::new();
-    // Regex: prefix + YYYYMMDDHHMMSS + .mkv
-    // e.g. video_20251201071802.mkv
-    let pattern = format!(r"^{}(\d{{14}})\.mkv$", prefix); 
-    // We can't easily use OnceLock for dynamic pattern (prefix changes), but we can optimize the common case or just handle error.
-    // Actually, prefix is usually "video_" or "audio_".
-    // Let's just use Regex::new but handle error properly (which it already does with map_err).
-    let re = Regex::new(&pattern).map_err(|e| e.to_string())?;
 
     if !dir.exists() {
         return Ok(vec![]);
@@ -317,25 +307,24 @@ fn find_segments_by_time(
     for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
+        
+        // Use generalized parser which supports both legacy and new precisions
         if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
-            if let Some(caps) = re.captures(fname) {
-                if let Some(ts_str) = caps.get(1) {
-                    // Parse timestamp
-                    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
-                        if let Some(ts) = Local.from_local_datetime(&naive).latest() {
-                            // Check overlap
-                            // Segment covers [ts, ts + 2s] roughly (actually 15s in config, but logic handles overlap)
-                            // We want segments where End > Start_Req AND Start < End_Req
-                            // ffprobe or config would be better for duration, but let's assume 15s based on logs
-                            let seg_start = ts;
-                            let seg_end = ts + Duration::seconds(15); 
+            if fname.starts_with(prefix) && fname.ends_with(".mkv") {
+                 if let Ok(epoch_ms) = crate::ffmpeg::utils::parse_segment_filename_to_epoch_ms(fname) {
+                     // Convert Epoch MS back to Local DateTime for comparison
+                     let ts = std::time::UNIX_EPOCH + std::time::Duration::from_millis(epoch_ms);
+                     let ts_dt: DateTime<Local> = ts.into();
 
-                            if seg_end > start && seg_start < end {
-                                segments.push((path, seg_start));
-                            }
-                        }
-                    }
-                }
+                     // Check overlap
+                     // Segment covers [ts, ts + 15s] roughly
+                     let seg_start = ts_dt;
+                     let seg_end = ts_dt + Duration::seconds(15); 
+
+                     if seg_end > start && seg_start < end {
+                         segments.push((path, seg_start));
+                     }
+                 }
             }
         }
     }
@@ -345,16 +334,6 @@ fn find_segments_by_time(
 
     if segments.is_empty() {
         log::warn!("No segments found for range: {} to {} (Prefix: {})", start, end, prefix);
-        // Debug scan
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                if let Some(fname) = entry.path().file_name().and_then(|n| n.to_str()) {
-                    if fname.starts_with(prefix) && fname.ends_with(".mkv") {
-                         log::warn!("  Candidate ignored (Time mismatch?): {}", fname);
-                    }
-                }
-            }
-        }
     }
 
     Ok(segments.into_iter().map(|(p, _)| p).collect())
@@ -362,10 +341,25 @@ fn find_segments_by_time(
 
 fn probe_start_time(app: &AppHandle, path: &Path) -> Option<u64> {
     // 1. Parse Filename for approximate Epoch (Fallback & Validation)
+    // This now supports high-precision via utils
     let fname = path.file_name().and_then(|n| n.to_str())?;
     let filename_epoch_ms = crate::ffmpeg::utils::parse_segment_filename_to_epoch_ms(fname).ok();
 
     // 2. Probe with ffprobe
+    // ffprobe returns relative time (0.000), not epoch.
+    // So if filenames are now high-precision, we should trust them MORE than before.
+    // However, probe is still useful if the video content itself has start_time offset (rare for segments).
+    // Actually, segment muxer usually resets timestamps (-reset_timestamps 1).
+    // So ffprobe usually says 0.000.
+    // Thus, the filename IS the source of truth for "Real World Time".
+    
+    // So logic remains: Use filename. ffprobe is just for sanity checking if it returns a huge number (unlikely).
+    // But since we updated parse_segment_filename, we are good.
+    
+    // We can simplify this if we trust the new filename format.
+    // But keeping existing logic is safer "small change".
+    // Just note that filename_epoch_ms is now precise.
+
     let ffprobe_path = crate::ffmpeg::utils::get_sidecar_path(app, "ffprobe").ok()?;
 
     let mut cmd = Command::new(ffprobe_path);
@@ -398,16 +392,14 @@ fn probe_start_time(app: &AppHandle, path: &Path) -> Option<u64> {
                 Ok(pr_ms)
             } else {
                 // Probe is relative. Fallback to filename.
-                log::warn!("Probe returned non-Epoch time ({}). Falling back to filename time ({}).", pr_ms, fn_ms);
+                // log::warn!("Probe returned non-Epoch time ({}). Falling back to filename time ({}).", pr_ms, fn_ms);
                 Ok(fn_ms)
             }
         },
         (Some(fn_ms), None) => {
-            log::warn!("Probe failed. Falling back to filename time.");
             Ok(fn_ms)
         },
         (None, Some(pr_ms)) => {
-            // No filename time? Trust probe if it looks like Epoch.
              if pr_ms > 946684800000 {
                  Ok(pr_ms)
              } else {
@@ -423,9 +415,6 @@ fn stitch_segments(app: &AppHandle, segments: &[PathBuf], temp_dir: &Path, outpu
     let mut content = String::new();
     
     for seg in segments {
-        // Copy to temp dir to avoid file locking issues or path issues?
-        // Or just reference absolute path. FFmpeg supports absolute paths in concat list.
-        // But Windows paths need escaping.
         let path_str = seg.to_string_lossy().replace("\\", "/");
         content.push_str(&format!("file '{}'\n", path_str));
     }
@@ -463,14 +452,17 @@ pub fn cleanup_buffer(buffer_dir: &PathBuf, retention_seconds: u32) -> std::io::
     let retention = Duration::seconds(retention_seconds as i64);
     
     // Regex for new pattern
-    // Regex for new pattern
-    let re = RE_VIDEO_AUDIO.get_or_init(|| Regex::new(r"(video|audio)_(\d{14})\.mkv").expect("Invalid Regex Pattern"));
+    // Update: allow optional 3-digit millisecond suffix
+    // r"(video|audio)_(\d{14})(\d{3})?\.mkv"
+    let re = RE_VIDEO_AUDIO.get_or_init(|| Regex::new(r"(video|audio)_(\d{14})(\d{3})?\.mkv").expect("Invalid Regex Pattern"));
 
     for entry in fs::read_dir(buffer_dir)? {
         let entry = entry?;
         let path = entry.path();
         if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
             if let Some(caps) = re.captures(fname) {
+                // Determine which group is the timestamp (could be 2 or 3 depending on implementation, but regex above is clear)
+                // Group 2 is base timestamp. Group 3 is optional MS (we ignore MS for retention as seconds prec is enough)
                 if let Some(ts_str) = caps.get(2) {
                     if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
                         if let Some(ts) = Local.from_local_datetime(&naive).latest() {
@@ -487,29 +479,13 @@ pub fn cleanup_buffer(buffer_dir: &PathBuf, retention_seconds: u32) -> std::io::
 }
 
 async fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBuf) {
-    // Extract timestamp from segment
-    // Extract timestamp from segment
-    let re = RE_TIMESTAMP.get_or_init(|| Regex::new(r"(\d{14})\.mkv").expect("Invalid Regex Pattern"));
     let fname = segment_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     
-    let current_ts = if let Some(caps) = re.captures(fname) {
-        if let Some(ts_str) = caps.get(1) {
-            chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S").ok()
-        } else { None }
-    } else { None };
+    // Use robust parsing from utils
+    let current_epoch_ms = crate::ffmpeg::utils::parse_segment_filename_to_epoch_ms(fname).ok();
 
-    if let Some(current_naive) = current_ts {
-        // Use latest() to handle ambiguous times (DST overlap). Returns None for invalid times (DST gap).
-        let current_time = match Local.from_local_datetime(&current_naive).latest() {
-            Some(t) => t,
-            None => {
-                log::warn!("Skipping segment {} due to invalid local time (DST gap?)", fname);
-                return;
-            }
-        };
-        
-        // Wait loop
-        let max_retries = 5; // 2.5 seconds (5 * 500ms)
+    if let Some(current_ms) = current_epoch_ms {
+        let max_retries = 5; // 2.5 seconds
         for i in 0..max_retries {
             // Check if a newer file exists
             let mut newer_found = false;
@@ -517,18 +493,15 @@ async fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBu
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if let Some(caps) = re.captures(name) {
-                            if let Some(ts_str) = caps.get(1) {
-                                if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str.as_str(), "%Y%m%d%H%M%S") {
-                                    if let Some(ts) = Local.from_local_datetime(&naive).latest() {
-                                        if ts > current_time {
-                                            newer_found = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                         // Check prefix match to avoid mixing audio/video checks?
+                         // Original logic just checked "any newer file".
+                         // Let's stick to using utils parser.
+                         if let Ok(ts_ms) = crate::ffmpeg::utils::parse_segment_filename_to_epoch_ms(name) {
+                             if ts_ms > current_ms {
+                                 newer_found = true;
+                                 break;
+                             }
+                         }
                     }
                 }
             }
@@ -538,7 +511,7 @@ async fn wait_for_segment_completion(segment_path: &PathBuf, buffer_dir: &PathBu
                 return;
             }
 
-            // Also check if file hasn't been modified for a while (fallback if recording stopped)
+            // Also check if file hasn't been modified for a while
             if let Ok(meta) = fs::metadata(segment_path) {
                 if let Ok(modified) = meta.modified() {
                     if let Ok(age) = std::time::SystemTime::now().duration_since(modified) {
@@ -568,11 +541,6 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
-        // Create segments
-        // Segment 1: 2024-01-01 10:00:00 (Duration 2s) -> Ends 10:00:02
-        // Segment 2: 2024-01-01 10:00:02 (Duration 2s) -> Ends 10:00:04
-        // Segment 3: 2024-01-01 10:00:04 (Duration 2s) -> Ends 10:00:06
-
         let create_file = |name: &str| {
             File::create(temp_dir.join(name)).unwrap();
         };
@@ -580,10 +548,6 @@ mod tests {
         create_file("video_20240101100000.mkv");
         create_file("video_20240101100002.mkv");
         create_file("video_20240101100004.mkv");
-
-        // Request: 10:00:01 to 10:00:03
-        // Should include Segment 1 (ends 10:00:02 > 10:00:01) and Segment 2 (starts 10:00:02 < 10:00:03)
-        // Segment 3 starts 10:00:04, which is > 10:00:03, so excluded.
 
         let start_naive = chrono::NaiveDateTime::parse_from_str("20240101100001", "%Y%m%d%H%M%S").unwrap();
         let end_naive = chrono::NaiveDateTime::parse_from_str("20240101100003", "%Y%m%d%H%M%S").unwrap();

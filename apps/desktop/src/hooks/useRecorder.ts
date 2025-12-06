@@ -1,7 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-// import { readFile } from '@tauri-apps/plugin-fs'; // Removed
-// import { fetch } from '@tauri-apps/plugin-http'; // Removed
+
 import { useRecordingStore } from '../stores/recordingStore';
 import { useToastStore } from '../stores/toastStore';
 import { REPLAY_BUFFER_DELAY, CLIP_SAVE_DELAY } from '@squadsync/shared';
