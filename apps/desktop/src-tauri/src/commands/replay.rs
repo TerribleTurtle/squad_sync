@@ -10,7 +10,6 @@ use chrono::{DateTime, Local, TimeZone, Duration};
 use std::sync::OnceLock;
 
 static RE_VIDEO_AUDIO: OnceLock<Regex> = OnceLock::new();
-static RE_TIMESTAMP: OnceLock<Regex> = OnceLock::new();
 
 #[derive(serde::Serialize)]
 pub struct SavedReplay {

@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { View, computeTimelineStartMs, computeTimelineEndMs } from '@squadsync/shared';
+import { VideoTile } from './VideoTile';
 
 interface WebSquadGridProps {
   clips: View[];
@@ -95,29 +96,37 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
           current: video.currentTime.toFixed(2),
         });
 
-        // --- Drift Correction Strategy ---
+        // --- Drift Correction Strategy (Proportional Control) ---
+        const MAX_DRIFT = 0.5; // Force seek if drift > 500ms
+        const SYNC_THRESHOLD = 0.015; // Synced if drift < 15ms
+        const P_GAIN = 0.15; // Proportional Gain: Rate change per second of drift
+        // e.g. 100ms drift * 0.15 = 0.015 rate change (1.5% speedup)
 
         // 1. Force Seek (User scrub or massive drift)
-        if (forceSeek || absDiff > 0.2) {
+        if (forceSeek || absDiff > MAX_DRIFT) {
           video.currentTime = targetVideoTimeSec;
           video.playbackRate = 1.0;
         }
-        // 2. Micro-Adjustment with Hysteresis
-        else {
-          // Current state: Are we already correcting?
-          const isCorrecting = Math.abs(video.playbackRate - 1.0) > 0.01;
+        // 2. Proportional Rate Control
+        else if (absDiff > SYNC_THRESHOLD) {
+          // Calculate desired correction
+          // If diff is positive (video is ahead), we want rate < 1.0
+          // If diff is negative (video is behind), we want rate > 1.0
+          // diff = video.currentTime - target
+          // Using: rate = 1.0 - (diff * P_GAIN)
 
-          if (isCorrecting) {
-            // Exit Strategy: Only return to 1.0 if we are VERY close (Dead zone < 10ms)
-            if (absDiff < 0.01) {
-              video.playbackRate = 1.0;
-            }
-            // Otherwise keep correcting (The existing rate is likely fine, or we could update it)
-          } else {
-            // Enter Strategy: Only start correcting if we drift significantly (> 50ms)
-            if (absDiff > 0.05) {
-              video.playbackRate = diff > 0 ? 0.95 : 1.05;
-            }
+          let targetRate = 1.0 - diff * P_GAIN;
+
+          // Clamp rate to avoid audio distortion
+          // 0.95 to 1.05 is usually safe for pitch-corrected audio
+          targetRate = Math.max(0.95, Math.min(1.05, targetRate));
+
+          video.playbackRate = targetRate;
+        }
+        // 3. Synced
+        else {
+          if (video.playbackRate !== 1.0) {
+            video.playbackRate = 1.0;
           }
         }
       });
@@ -132,15 +141,22 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
   );
 
   // 3. Pre-Roll / Initial Seek
+  const lastTimelineStartMsRef = useRef<number | null>(null);
+
   // When clips change, we want to snap everything to 0:00 (Global) immediately
   useEffect(() => {
     if (activeViews.length > 0 && timelineStartMs > 0) {
-      // Wait a tick for video elements to mount
-      const timer = setTimeout(() => {
-        syncVideos(0, true); // Force seek to 0
-        setVideosReady(true);
-      }, 100);
-      return () => clearTimeout(timer);
+      // Only reset/force seek if the timeline start has changed (new session or shift)
+      if (lastTimelineStartMsRef.current !== timelineStartMs) {
+        lastTimelineStartMsRef.current = timelineStartMs;
+
+        // Wait a tick for video elements to mount
+        const timer = setTimeout(() => {
+          syncVideos(0, true); // Force seek to 0
+          setVideosReady(true);
+        }, 100);
+        return () => clearTimeout(timer);
+      }
     }
   }, [activeViews, timelineStartMs, syncVideos]);
 
@@ -227,6 +243,24 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
     };
   }, [isPlaying]);
 
+  // 6. Stable Handlers for VideoTile
+  const handleVideoMount = useCallback((url: string, el: HTMLVideoElement) => {
+    videoRefs.current.set(url, el);
+  }, []);
+
+  const handleVideoUnmount = useCallback((url: string) => {
+    videoRefs.current.delete(url);
+    bufferingStateRef.current.delete(url);
+  }, []);
+
+  const handleVideoWaiting = useCallback((url: string) => {
+    bufferingStateRef.current.set(url, true);
+  }, []);
+
+  const handleVideoPlaying = useCallback((url: string) => {
+    bufferingStateRef.current.set(url, false);
+  }, []);
+
   // Handlers
   const handlePlay = () => {
     // Resume audio context if needed (browser policy)
@@ -289,40 +323,15 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
         )}
 
         {clips.map((clip) => (
-          <div
+          <VideoTile
             key={clip.url}
-            className="relative group rounded-xl overflow-hidden bg-slate-900 border border-white/10"
-          >
-            <video
-              ref={(el) => {
-                if (el) {
-                  videoRefs.current.set(clip.url, el);
-                  // Add listeners for buffering
-                  const onWaiting = () => bufferingStateRef.current.set(clip.url, true);
-                  const onPlaying = () => bufferingStateRef.current.set(clip.url, false);
-                  const onCanPlay = () => bufferingStateRef.current.set(clip.url, false);
-
-                  el.addEventListener('waiting', onWaiting);
-                  el.addEventListener('playing', onPlaying);
-                  el.addEventListener('canplay', onCanPlay);
-
-                  // Cleanup helper attached to element? No, ref callback runs with null on unmount
-                } else {
-                  videoRefs.current.delete(clip.url);
-                  bufferingStateRef.current.delete(clip.url);
-                }
-              }}
-              src={clip.url}
-              className="w-full h-full object-contain"
-              muted={muted}
-              playsInline
-              // Important: PRELOAD metadata so we can set currentTime immediately
-              preload="auto"
-            />
-            <div className="absolute bottom-4 left-4 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-medium">
-              {clip.author}
-            </div>
-          </div>
+            clip={clip}
+            muted={muted}
+            onMount={handleVideoMount}
+            onUnmount={handleVideoUnmount}
+            onWaiting={handleVideoWaiting}
+            onPlaying={handleVideoPlaying}
+          />
         ))}
       </div>
 
