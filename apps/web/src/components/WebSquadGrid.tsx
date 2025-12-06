@@ -4,6 +4,8 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { View, computeTimelineStartMs, computeTimelineEndMs } from '@squadsync/shared';
 import { VideoTile } from './VideoTile';
+import { alignClips } from '../lib/audioSync';
+import { Sparkles } from 'lucide-react';
 
 interface WebSquadGridProps {
   clips: View[];
@@ -24,6 +26,10 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [videosReady, setVideosReady] = useState(false);
+
+  // Magic Sync State
+  const [magicOffsets, setMagicOffsets] = useState<Map<string, number>>(new Map());
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // 1. Timeline Metrics
   const timelineStartMs = useMemo(() => {
@@ -69,7 +75,29 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
         // Calculate target time in this specific video file
         // target = (globalTime - (clipStart - timelineStart)) / 1000
         // Simplifies to: (globalTime + timelineStart - clipStart) / 1000
-        const targetVideoTimeSec = (timelineStartMs + globalTime - clip.videoStartTimeMs) / 1000;
+        // Calculate target time in this specific video file
+        // target = (globalTime - (clipStart - timelineStart)) / 1000
+        // MAGIC SYNC: Adjusted Start = clip.videoStartTimeMs - offset
+        // If offset is +500ms (Clip was late), we subtract it?
+        // Let's verify logic:
+        // Ref (Clip 0) is truth. Offset 0.
+        // Target (Clip 1) is +500ms lag in audio.
+        // Means Clip 1's "BANG" is at 10.5s, Ref "BANG" is at 10.0s.
+        // To play "BANG" at same time, we must play Clip 1 at t=10.5 when Ref is t=10.0.
+        // So Clip 1 Time = Global Time + (Difference).
+        // Standard: Time = Global + (TimelineStart - VideoStart).
+        // If Global=0 (at BANG). We want Clip 1 to be 10.5.
+        // Means VideoStart must be effectively SMALLER.
+        // EffectiveStart = VideoStart - Offset(500).
+        // Then Time = 0 + (TimelineStart - (VideoStart - 500))
+        //           = 0 + TimelineStart - VideoStart + 500.
+        //           = Normal + 0.5s. Correct.
+        // So we SUBTRACT offset from videoStartTimeMs.
+
+        const magicOffset = magicOffsets.get(clip.url) || 0;
+        const effectiveStartTime = clip.videoStartTimeMs - magicOffset;
+
+        const targetVideoTimeSec = (timelineStartMs + globalTime - effectiveStartTime) / 1000;
 
         // Clip hasn't started yet or has ended in the global timeline
         if (targetVideoTimeSec < 0 || targetVideoTimeSec > video.duration) {
@@ -137,7 +165,7 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
           stats.map((s) => `${s.author}: Drift=${s.drift}s Rate=${s.rate}x`).join('\n');
       }
     },
-    [timelineStartMs, isPlaying, isBuffering, showDebug, activeViews]
+    [timelineStartMs, isPlaying, isBuffering, showDebug, activeViews, magicOffsets]
   );
 
   // 3. Pre-Roll / Initial Seek
@@ -159,6 +187,20 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
       }
     }
   }, [activeViews, timelineStartMs, syncVideos]);
+
+  // MAGIC SYNC: Auto-Run on Mount
+  useEffect(() => {
+    if (activeViews.length > 1) {
+      setIsSyncing(true);
+      alignClips(activeViews).then((offsets) => {
+        console.log('✨ Magic Sync Offsets:', offsets);
+        setMagicOffsets(offsets);
+        setIsSyncing(false);
+        // Force re-sync
+        syncVideos(globalCurrentTimeMs, true);
+      });
+    }
+  }, [activeViews, globalCurrentTimeMs, syncVideos]);
 
   // 4. Global Buffering Check
   const checkGlobalBuffering = useCallback(() => {
@@ -319,6 +361,11 @@ export function WebSquadGrid({ clips }: WebSquadGridProps) {
         {(isBuffering || !videosReady) && (
           <div className="absolute inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
             <Loader2 size={48} className="text-white animate-spin" />
+            {isSyncing && (
+              <div className="absolute mt-16 text-indigo-400 font-bold tracking-wider text-xs flex items-center gap-2">
+                <Sparkles size={12} /> MAGIC SYNCING...
+              </div>
+            )}
           </div>
         )}
 
